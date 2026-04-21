@@ -178,3 +178,39 @@ class HistorialCambio(models.Model):
 
     def __str__(self):
         return f"{self.modelo} {self.objeto_id} - {self.campo}"
+
+
+class Alerta(models.Model):
+    TIPOS = [
+        ('bajo_stock', 'Bajo Stock'),
+        ('vencimiento', 'Vencimiento Próximo'),
+        ('agotado', 'Agotado'),
+        ('reactivo', 'Reactivo Crítico'),
+        ('autorizacion', 'Autorización'),
+        ('otro', 'Otro'),
+    ]
+    PRIORIDADES = [
+        ('alta', 'Alta'),
+        ('media', 'Media'),
+        ('baja', 'Baja'),
+    ]
+
+    tipo = models.CharField(max_length=20, choices=TIPOS, default='otro')
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='alertas', null=True, blank=True)
+    titulo = models.CharField(max_length=200, blank=True, default='')
+    mensaje = models.TextField(blank=True, default='')
+    descripcion = models.TextField(blank=True, default='')
+    remitente = models.CharField(max_length=150, blank=True, default='Sistema')
+    prioridad = models.CharField(max_length=10, choices=PRIORIDADES, default='media')
+    resuelta = models.BooleanField(default=False)
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def estado(self):
+        return 'resuelta' if self.resuelta else 'nueva'
+
+    class Meta:
+        ordering = ['-fecha']
+
+    def __str__(self):
+        return f"{self.tipo} - {(self.titulo or self.mensaje)[:50]}"

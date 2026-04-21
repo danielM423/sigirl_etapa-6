@@ -7,25 +7,64 @@ import { Search, ChevronDown, Plus, Edit2, Trash2, Package, AlertCircle, Trendin
 import Layout from '../components/Layout';
 import ReportPanel from '../components/ReportPanel';
 import { exportToExcel, exportToPdf } from '../utils/reportExport';
-import { appendSystemAlert, loadSigirlCollections, saveSigirlCollections } from '../utils/sigirlStorage';
+import {
+  getProductos, createProducto, updateProducto, deleteProducto,
+  getPedidos, updatePedido,
+  getAlertas, createAlerta, updateAlerta,
+} from '../services/api';
 
+// ============================================================
+// FUNCIONES DE NORMALIZACIÓN
+// ============================================================
+// Convierte los datos de la API al formato que espera el frontend
+// La API puede devolver categoria_nombre o categoria, esta función unifica
+const normalizeProducto = (p) => ({
+  ...p,
+  categoria: p.categoria_nombre || String(p.categoria || ''),
+  umbral_minimo: p.umbral_minimo ?? p.minimo ?? 0,
+});
+
+// Normaliza el nombre del producto en los pedidos
+const normalizePedido = (p) => ({
+  ...p,
+  producto: p.producto_nombre || p.producto,
+});
+
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
 const AdminDashboard = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [productos, setProductos] = useState([]);
-  const [pedidos, setPedidos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [alertas, setAlertas] = useState([]);
-  const activeTab = ['pedidos', 'alertas'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'inventario';
-  const [searchTerm, setSearchTerm] = useState('');
-  const [inventorySearchTerm, setInventorySearchTerm] = useState('');
-  const [inventoryCategory, setInventoryCategory] = useState('todas');
-  const [alertPriorityFilter, setAlertPriorityFilter] = useState('todas');
-  const [filterStatus, setFilterStatus] = useState('todos');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [showModalInventario, setShowModalInventario] = useState(false);
-  const [formProducto, setFormProducto] = useState({
+  // ============================================================
+  // ESTADOS PRINCIPALES
+  // ============================================================
+  const [searchParams, setSearchParams] = useSearchParams();     // Lee/escribe parámetros URL (?tab=pedidos)
+  const [productos, setProductos] = useState([]);               // Lista de productos del inventario
+  const [pedidos, setPedidos] = useState([]);                   // Lista de pedidos
+  const [loading, setLoading] = useState(true);                 // Indica si los datos están cargando
+  const [alertas, setAlertas] = useState([]);                   // Lista de alertas del sistema
+  
+  // Pestaña activa: 'inventario', 'pedidos' o 'alertas' (por defecto 'inventario')
+  const activeTab = ['pedidos', 'alertas'].includes(searchParams.get('tab')) 
+    ? searchParams.get('tab') 
+    : 'inventario';
+
+  // ============================================================
+  // ESTADOS DE BÚSQUEDA Y FILTROS
+  // ============================================================
+  const [searchTerm, setSearchTerm] = useState('');              // Búsqueda en pedidos
+  const [inventorySearchTerm, setInventorySearchTerm] = useState(''); // Búsqueda en inventario
+  const [inventoryCategory, setInventoryCategory] = useState('todas'); // Filtro por categoría en inventario
+  const [alertPriorityFilter, setAlertPriorityFilter] = useState('todas'); // Filtro por prioridad de alertas
+  const [filterStatus, setFilterStatus] = useState('todos');     // Filtro por estado de pedidos
+  const [dateFrom, setDateFrom] = useState('');                  // Filtro fecha inicio para pedidos
+  const [dateTo, setDateTo] = useState('');                      // Filtro fecha fin para pedidos
+
+  // ============================================================
+  // ESTADOS PARA MODAL Y FORMULARIOS
+  // ============================================================
+  const [selectedProduct, setSelectedProduct] = useState(null);  // Producto que se está editando
+  const [showModalInventario, setShowModalInventario] = useState(false); // Controla visibilidad del modal
+  const [formProducto, setFormProducto] = useState({             // Datos del formulario de producto
     nombre: '',
     categoria: 'Solventes',
     ubicacion: '',
@@ -33,73 +72,89 @@ const AdminDashboard = () => {
     umbral_minimo: ''
   });
 
+  // ============================================================
+  // FUNCIÓN: Cambiar pestaña activa
+  // ============================================================
   const changeTab = (tab) => {
-    setSearchParams({ tab });
+    setSearchParams({ tab });  // Actualiza la URL para mantener el estado
   };
 
+  // ============================================================
+  // EFECTO: Carga inicial de datos
+  // ============================================================
   useEffect(() => {
-    const hydrate = () => {
-      const { productos: productosStore, pedidos: pedidosStore, alertas: alertasStore } = loadSigirlCollections();
-      setProductos(productosStore);
-      setPedidos(pedidosStore);
-      setAlertas(alertasStore);
-      setLoading(false);
+    const hydrate = async () => {
+      try {
+        // Carga productos, pedidos y alertas en paralelo (más eficiente)
+        const [prodRes, pedRes, alertRes] = await Promise.all([
+          getProductos(),
+          getPedidos(),
+          getAlertas(),
+        ]);
+        // Normaliza y guarda los datos en los estados
+        setProductos((prodRes.data.results ?? prodRes.data).map(normalizeProducto));
+        setPedidos((pedRes.data.results ?? pedRes.data).map(normalizePedido));
+        setAlertas(alertRes.data.results ?? alertRes.data);
+      } catch (err) {
+        toast.error('Error al cargar datos del servidor');
+        console.error(err);
+      } finally {
+        setLoading(false);  // Termina el estado de carga
+      }
     };
-
     hydrate();
-    window.addEventListener('sigirl-data-updated', hydrate);
-    return () => window.removeEventListener('sigirl-data-updated', hydrate);
-  }, []);
+  }, []);  // El array vacío significa que solo se ejecuta al montar el componente
 
-  const handleRechazarPedido = (id) => {
+  // ============================================================
+  // MANEJO DE PEDIDOS
+  // ============================================================
+  
+  // Rechazar un pedido: solicita motivo y actualiza en API
+  const handleRechazarPedido = async (id) => {
     const motivo = prompt('¿Cuál es el motivo del rechazo?');
-    if (motivo !== null) {
-      if (!motivo.trim()) {
-        toast.error('Debes indicar un motivo de rechazo');
-        return;
+    if (motivo === null) return;
+    if (!motivo.trim()) {
+      toast.error('Debes indicar un motivo de rechazo');
+      return;
+    }
+    try {
+      const { data } = await updatePedido(id, { estado: 'rechazado', motivo_rechazo: motivo });
+      setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(data) : p));
+      toast.success('Pedido rechazado exitosamente');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al rechazar pedido');
+    }
+  };
+
+  // Aprobar un pedido: si es reactivo crítico, genera alerta automática
+  const handleAprobarPedido = async (id) => {
+    try {
+      const pedido = pedidos.find((p) => p.id === id);
+      const { data } = await updatePedido(id, { estado: 'aprobado' });
+      setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(data) : p));
+
+      // Si el pedido contiene un reactivo crítico, crear alerta automática
+      if (pedido?.evaluacion_seguridad?.reactivoCritico) {
+        createAlerta({
+          tipo: 'autorizacion',
+          titulo: `Reactivo autorizado: ${pedido.producto}`,
+          descripcion: `El administrador autorizó la solicitud de ${pedido.solicitante}.`,
+          remitente: 'Administrador',
+          prioridad: 'media',
+        }).then(({ data: alerta }) => setAlertas((prev) => [alerta, ...prev])).catch(() => {});
       }
 
-      const nuevosPedidos = pedidos.map((p) =>
-        p.id === id ? { ...p, estado: 'rechazado', motivo_rechazo: motivo, fecha_respuesta: new Date().toISOString().split('T')[0] } : p
-      );
-      setPedidos(nuevosPedidos);
-      saveSigirlCollections({ pedidos: nuevosPedidos });
-      toast.success('Pedido rechazado exitosamente');
+      toast.success('Pedido aprobado exitosamente');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al aprobar pedido');
     }
   };
 
-  const handleAprobarPedido = (id) => {
-    const pedido = pedidos.find((p) => p.id === id);
-    const nuevosPedidos = pedidos.map((p) =>
-      p.id === id ? { ...p, estado: 'aprobado', fecha_respuesta: new Date().toISOString().split('T')[0] } : p
-    );
-
-    setPedidos(nuevosPedidos);
-    saveSigirlCollections({ pedidos: nuevosPedidos });
-
-    if (pedido?.evaluacion_seguridad?.reactivoCritico) {
-      appendSystemAlert({
-        tipo: 'autorizacion',
-        prioridad: 'media',
-        titulo: `Reactivo autorizado: ${pedido.producto}`,
-        descripcion: `El administrador autorizó la solicitud de ${pedido.solicitante}.`,
-        remitente: 'Administrador',
-        destinatario: pedido.solicitante,
-      });
-    }
-
-    toast.success('Pedido aprobado exitosamente');
-  };
-
-  const calcularEstadoProducto = (cantidad, umbralMinimo) => {
-    const cantidadNum = Number(cantidad);
-    const umbralNum = Number(umbralMinimo);
-
-    if (cantidadNum <= 0) return 'agotado';
-    if (cantidadNum <= umbralNum) return 'bajo_stock';
-    return 'ok';
-  };
-
+  // ============================================================
+  // MANEJO DE PRODUCTOS (CRUD)
+  // ============================================================
+  
+  // Reinicia el formulario de producto a sus valores por defecto
   const resetFormProducto = () => {
     setFormProducto({
       nombre: '',
@@ -111,11 +166,13 @@ const AdminDashboard = () => {
     setSelectedProduct(null);
   };
 
+  // Abre el modal para crear un nuevo producto
   const handleNuevoProducto = () => {
     resetFormProducto();
     setShowModalInventario(true);
   };
 
+  // Abre el modal para editar un producto existente
   const handleEditarProducto = (producto) => {
     setSelectedProduct(producto);
     setFormProducto({
@@ -128,67 +185,87 @@ const AdminDashboard = () => {
     setShowModalInventario(true);
   };
 
-  const handleGuardarProducto = () => {
+  // Guarda producto (crea o actualiza según si hay selectedProduct)
+  const handleGuardarProducto = async () => {
+    // Validaciones
     if (!formProducto.nombre.trim() || !formProducto.ubicacion.trim()) {
       toast.error('Completa el nombre y la ubicación del producto');
       return;
     }
-
     if (formProducto.cantidad === '' || formProducto.umbral_minimo === '') {
       toast.error('Completa la cantidad y el umbral mínimo');
+      return;
+    }
+    if (Number(formProducto.cantidad) < 0 || Number(formProducto.umbral_minimo) < 0) {
+      toast.error('Las cantidades no pueden ser negativas');
       return;
     }
 
     const payload = {
       nombre: formProducto.nombre.trim(),
-      categoria: formProducto.categoria,
+      categoria_texto: formProducto.categoria,
       ubicacion: formProducto.ubicacion.trim(),
       cantidad: Number(formProducto.cantidad),
       umbral_minimo: Number(formProducto.umbral_minimo),
-      ultima_actualizacion: new Date().toISOString().split('T')[0]
+      tipo: 'reactivo',
     };
 
-    if (payload.cantidad < 0 || payload.umbral_minimo < 0) {
-      toast.error('Las cantidades no pueden ser negativas');
-      return;
+    try {
+      if (selectedProduct) {
+        // Actualizar producto existente
+        const { data } = await updateProducto(selectedProduct.id, payload);
+        setProductos((prev) => prev.map((p) => p.id === selectedProduct.id ? normalizeProducto(data) : p));
+        toast.success('Producto actualizado exitosamente');
+      } else {
+        // Crear nuevo producto
+        const { data } = await createProducto(payload);
+        setProductos((prev) => [normalizeProducto(data), ...prev]);
+        toast.success('Producto creado exitosamente');
+      }
+      setShowModalInventario(false);
+      resetFormProducto();
+    } catch (err) {
+      const msg = err.response?.data;
+      const detail = typeof msg === 'object' ? Object.values(msg).flat().join(' ') : (msg || 'Error al guardar producto');
+      toast.error(detail);
     }
-
-    payload.estado = calcularEstadoProducto(payload.cantidad, payload.umbral_minimo);
-
-    if (selectedProduct) {
-      const nuevosProductos = productos.map(producto =>
-        producto.id === selectedProduct.id ? { ...producto, ...payload } : producto
-      );
-      setProductos(nuevosProductos);
-      saveSigirlCollections({ productos: nuevosProductos });
-      toast.success('Producto actualizado exitosamente');
-    } else {
-      const nuevosProductos = [
-        { id: Date.now(), ...payload },
-        ...productos
-      ];
-      setProductos(nuevosProductos);
-      saveSigirlCollections({ productos: nuevosProductos });
-      toast.success('Producto creado exitosamente');
-    }
-
-    setShowModalInventario(false);
-    resetFormProducto();
   };
 
-  const handleEliminarProducto = (id) => {
-    const producto = productos.find(p => p.id === id);
+  // Eliminar un producto del inventario
+  const handleEliminarProducto = async (id) => {
+    const producto = productos.find((p) => p.id === id);
     if (!producto) return;
+    if (!window.confirm(`¿Eliminar ${producto.nombre} del inventario?`)) return;
 
-    const confirmar = window.confirm(`¿Eliminar ${producto.nombre} del inventario?`);
-    if (!confirmar) return;
-
-    const nuevosProductos = productos.filter(p => p.id !== id);
-    setProductos(nuevosProductos);
-    saveSigirlCollections({ productos: nuevosProductos });
-    toast.success('Producto eliminado exitosamente');
+    try {
+      await deleteProducto(id);
+      setProductos((prev) => prev.filter((p) => p.id !== id));
+      toast.success('Producto eliminado exitosamente');
+    } catch (err) {
+      toast.error('Error al eliminar el producto');
+    }
   };
 
+  // ============================================================
+  // MANEJO DE ALERTAS
+  // ============================================================
+  
+  // Marcar una alerta como resuelta
+  const handleResolverAlerta = async (id) => {
+    try {
+      const { data } = await updateAlerta(id, { resuelta: true });
+      setAlertas((prev) => prev.map((a) => a.id === id ? data : a));
+      toast.success('Alerta marcada como resuelta');
+    } catch (err) {
+      toast.error('Error al resolver la alerta');
+    }
+  };
+
+  // ============================================================
+  // FUNCIONES DE VISUALIZACIÓN Y UTILIDADES
+  // ============================================================
+  
+  // Muestra un modal con los detalles completos de un pedido
   const handleVerPedido = (pedido) => {
     const detalle = [
       `Código: ${pedido.codigo}`,
@@ -212,6 +289,7 @@ const AdminDashboard = () => {
     );
   };
 
+  // Devuelve un componente badge con el estilo según el estado
   const getEstadoBadge = (estado) => {
     const styles = {
       ok: 'bg-emerald-100 text-emerald-700 border border-emerald-300',
@@ -248,6 +326,11 @@ const AdminDashboard = () => {
     );
   };
 
+  // ============================================================
+  // FILTROS PARA CADA SECCIÓN
+  // ============================================================
+  
+  // Filtro de pedidos: búsqueda, estado, fechas
   const filteredPedidos = pedidos.filter(pedido => {
     const matchesSearch = pedido.producto.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          pedido.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -258,8 +341,10 @@ const AdminDashboard = () => {
     return matchesSearch && matchesFilter && matchesFrom && matchesTo;
   });
 
+  // Obtiene categorías únicas para el filtro de inventario
   const categoriasDisponibles = ['todas', ...new Set(productos.map((producto) => producto.categoria).filter(Boolean))];
 
+  // Filtro de productos: búsqueda y categoría
   const filteredProductos = productos.filter((producto) => {
     const text = inventorySearchTerm.toLowerCase();
     const matchesSearch =
@@ -270,8 +355,13 @@ const AdminDashboard = () => {
     return matchesSearch && matchesCategory;
   });
 
+  // Filtro de alertas: por prioridad
   const filteredAlertas = alertas.filter((alerta) => alertPriorityFilter === 'todas' || alerta.prioridad === alertPriorityFilter);
 
+  // ============================================================
+  // ESTADÍSTICAS PARA REPORTES
+  // ============================================================
+  
   const statsPedidos = {
     total: pedidos.length,
     pendientes: pedidos.filter(p => p.estado === 'pendiente').length,
@@ -285,6 +375,7 @@ const AdminDashboard = () => {
     altas: alertas.filter((alerta) => alerta.prioridad === 'alta').length,
   };
 
+  // Datos para gráficos según la pestaña activa
   const reportPrimaryData = activeTab === 'inventario'
     ? [
         { name: 'OK', value: productos.filter((p) => p.estado === 'ok').length },
@@ -318,6 +409,7 @@ const AdminDashboard = () => {
           return acc;
         }, {})).map(([name, value]) => ({ name, value }));
 
+  // Actividad reciente (últimos pedidos y alertas)
   const activityItems = [
     ...pedidos.slice(0, 5).map((pedido) => ({
       id: `pedido-${pedido.id}`,
@@ -333,6 +425,11 @@ const AdminDashboard = () => {
     })),
   ].slice(0, 7);
 
+  // ============================================================
+  // EXPORTACIÓN DE REPORTES
+  // ============================================================
+  
+  // Exporta los datos actuales a Excel
   const handleExportExcel = () => {
     if (activeTab === 'inventario') {
       exportToExcel(
@@ -373,10 +470,10 @@ const AdminDashboard = () => {
         'alertas-sigirl.xlsx'
       );
     }
-
     toast.success('Reporte exportado a Excel');
   };
 
+  // Exporta los datos actuales a PDF
   const handleExportPdf = () => {
     const isInventory = activeTab === 'inventario';
     const isPedidos = activeTab === 'pedidos';
@@ -398,15 +495,9 @@ const AdminDashboard = () => {
     toast.success('Reporte exportado a PDF');
   };
 
-  const handleResolverAlerta = (id) => {
-    const nuevasAlertas = alertas.map((alerta) =>
-      alerta.id === id ? { ...alerta, estado: 'resuelta' } : alerta
-    );
-    setAlertas(nuevasAlertas);
-    saveSigirlCollections({ alertas: nuevasAlertas });
-    toast.success('Alerta marcada como resuelta');
-  };
-
+  // ============================================================
+  // RENDERIZADO CONDICIONAL (PANTALLA DE CARGA)
+  // ============================================================
   if (loading) {
     return (
       <Layout>
@@ -415,15 +506,22 @@ const AdminDashboard = () => {
     );
   }
 
+  // ============================================================
+  // RENDERIZADO PRINCIPAL
+  // ============================================================
   return (
     <Layout>
       <div>
+        {/* ==================================================== */}
+        {/* HEADER DEL PANEL ADMINISTRATIVO */}
+        {/* ==================================================== */}
         <div className="mb-10 rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_12px_35px_rgba(34,197,94,0.10)] backdrop-blur-xl md:p-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <h1 className="text-[34px] font-bold text-slate-800">Panel administrativo PRO</h1>
               <p className="text-slate-500 text-base">Gestiona inventario, pedidos y alertas desde un solo lugar con una vista ejecutiva más limpia.</p>
 
+              {/* Badges de resumen */}
               <div className="mt-4 flex flex-wrap gap-2">
                 <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
                   {productos.length} productos
@@ -437,6 +535,7 @@ const AdminDashboard = () => {
               </div>
             </div>
 
+            {/* Botones de navegación entre pestañas */}
             <div className="flex flex-wrap justify-center gap-3 rounded-[24px] border border-emerald-100 bg-[#f8fff7] p-2.5">
               <button
                 onClick={() => changeTab('inventario')}
@@ -472,6 +571,9 @@ const AdminDashboard = () => {
           </div>
         </div>
 
+        {/* ==================================================== */}
+        {/* PANEL DE REPORTES (Gráficos y actividad reciente) */}
+        {/* ==================================================== */}
         <ReportPanel
           title={activeTab === 'inventario' ? 'Reporte de inventario y stock' : activeTab === 'pedidos' ? 'Reporte de pedidos y prioridades' : 'Reporte de alertas y seguimiento'}
           subtitle={activeTab === 'inventario' ? 'Resumen visual del estado de productos y categorías.' : activeTab === 'pedidos' ? 'Seguimiento de aprobaciones, rechazos y actividad reciente.' : 'Control de incidencias por prioridad, estado y atención pendiente.'}
@@ -482,10 +584,12 @@ const AdminDashboard = () => {
           onExportPdf={handleExportPdf}
         />
 
-        {/* INVENTARIO TAB */}
+        {/* ==================================================== */}
+        {/* SECCIÓN: INVENTARIO */}
+        {/* ==================================================== */}
         {activeTab === 'inventario' && (
           <div>
-            {/* Stats Cards */}
+            {/* Tarjetas de estadísticas - Inventario */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
               <div className="rounded-[20px] bg-gradient-to-r from-blue-500 to-blue-600 text-white p-5 shadow-lg">
                 <div className="flex items-center justify-between">
@@ -533,6 +637,7 @@ const AdminDashboard = () => {
               </div>
             </div>
 
+            {/* Barra de búsqueda y filtros de inventario */}
             <div className="mb-5 rounded-[24px] border border-emerald-100 bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-1 flex-col gap-3 md:flex-row">
@@ -577,7 +682,7 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Tabla Inventario */}
+            {/* Tabla de inventario */}
             <div className="bg-white rounded-xl border border-emerald-100 shadow-md overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -642,10 +747,12 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* PEDIDOS TAB */}
+        {/* ==================================================== */}
+        {/* SECCIÓN: PEDIDOS */}
+        {/* ==================================================== */}
         {activeTab === 'pedidos' && (
           <div>
-            {/* Stats Cards Pedidos */}
+            {/* Tarjetas de estadísticas - Pedidos */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
               <div className="rounded-[20px] bg-gradient-to-r from-blue-500 to-blue-600 text-white p-5 shadow-lg">
                 <div className="flex items-center justify-between">
@@ -693,7 +800,7 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Search & Filter */}
+            {/* Barra de búsqueda y filtros de pedidos */}
             <div className="bg-white rounded-[24px] border border-emerald-100 shadow-[0_10px_30px_rgba(34,197,94,0.08)] p-5 md:p-6 mb-8">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
                 <div className="flex-1 max-w-sm">
@@ -736,7 +843,7 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Tabla Pedidos */}
+            {/* Tabla de pedidos */}
             <div className="bg-white rounded-xl border border-emerald-100 shadow-md overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -830,8 +937,12 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        {/* ==================================================== */}
+        {/* SECCIÓN: ALERTAS */}
+        {/* ==================================================== */}
         {activeTab === 'alertas' && (
           <div>
+            {/* Tarjetas de estadísticas - Alertas */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
               <div className="rounded-2xl border border-rose-200 bg-white/80 p-5 shadow-sm">
                 <p className="text-sm font-semibold text-rose-600 uppercase">Total alertas</p>
@@ -847,6 +958,7 @@ const AdminDashboard = () => {
               </div>
             </div>
 
+            {/* Filtro de prioridad para alertas */}
             <div className="mb-5 rounded-[24px] border border-rose-100 bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
@@ -869,6 +981,7 @@ const AdminDashboard = () => {
               </div>
             </div>
 
+            {/* Tabla de alertas */}
             <div className="rounded-2xl border border-white/20 bg-white/70 backdrop-blur-sm overflow-hidden shadow-lg">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -920,6 +1033,10 @@ const AdminDashboard = () => {
             </div>
           </div>
         )}
+
+        {/* ==================================================== */}
+        {/* MODAL PARA CREAR/EDITAR PRODUCTO */}
+        {/* ==================================================== */}
         {showModalInventario && (
           <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="w-full max-w-xl rounded-[28px] sigirl-form-surface overflow-hidden">
@@ -942,6 +1059,7 @@ const AdminDashboard = () => {
                 </button>
               </div>
 
+              {/* Campos del formulario */}
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Nombre</label>
@@ -1005,6 +1123,7 @@ const AdminDashboard = () => {
                 </div>
               </div>
 
+              {/* Botones del modal */}
               <div className="sigirl-form-footer px-6 py-4 border-t border-emerald-100 bg-[#f8fff7]">
                 <button
                   onClick={() => {

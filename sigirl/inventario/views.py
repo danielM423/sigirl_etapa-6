@@ -18,6 +18,7 @@ from .serializers import (
     MovimientoSerializer,
     PedidoSerializer,
     ProductoSerializer,
+    UserManagementSerializer,
 )
 from .auditoria_utils import registrar_auditoria
 from rest_framework import generics
@@ -39,6 +40,7 @@ def serialize_authenticated_user(user):
 
 class PublicTokenObtainPairView(TokenObtainPairView):
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
@@ -56,6 +58,7 @@ class PublicTokenObtainPairView(TokenObtainPairView):
 
 class PublicTokenRefreshView(TokenRefreshView):
     permission_classes = [AllowAny]
+    authentication_classes = []
 
 
 class IsStaffForWrites(BasePermission):
@@ -229,6 +232,20 @@ class AlertaViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         if not (request.user.is_staff or request.user.is_superuser):
             return Response({'error': 'No autorizado para eliminar alertas.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+
+
+class UserManagementViewSet(viewsets.ModelViewSet):
+    serializer_class = UserManagementSerializer
+    permission_classes = [IsStaffForWrites]
+
+    def get_queryset(self):
+        return User.objects.prefetch_related('profile', 'pedidos').order_by('username')
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance == request.user:
+            return Response({'error': 'No puedes eliminar tu propio usuario.'}, status=status.HTTP_400_BAD_REQUEST)
         return super().destroy(request, *args, **kwargs)
 
 

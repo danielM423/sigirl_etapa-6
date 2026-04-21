@@ -5,7 +5,13 @@ import { toast } from 'react-toastify';
 import { Plus, Eye, Clock, CheckCircle2, XCircle, Search, ChevronDown, FileText, ShieldAlert, FlaskConical } from 'lucide-react';
 import Layout from '../components/Layout';
 import { UserContext } from '../context/AuthContext';
-import { REACTIVOS_CRITICOS, appendSystemAlert, evaluateReactivoAccess, loadSigirlCollections, saveSigirlCollections } from '../utils/sigirlStorage';
+import { REACTIVOS_CRITICOS, evaluateReactivoAccess } from '../utils/sigirlStorage';
+import { getProductos, getPedidos, createPedido, createAlerta } from '../services/api';
+
+const normalizePedido = (p) => ({
+  ...p,
+  producto: p.producto_nombre || p.producto,
+});
 
 const UsuarioDashboard = () => {
   const { user } = useContext(UserContext);
@@ -14,6 +20,7 @@ const UsuarioDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('todos');
   const [formPedido, setFormPedido] = useState({
+    productoId: '',
     producto: '',
     cantidad: '',
     prioridad: 'media',
@@ -28,20 +35,16 @@ const UsuarioDashboard = () => {
   });
 
   useEffect(() => {
-    const hydrate = () => {
-      const { pedidos: pedidosStore, productos } = loadSigirlCollections();
-      const username = user?.username || 'Usuario Actual';
-      const pedidosPropios = pedidosStore.filter(
-        (pedido) => pedido.solicitante === username || pedido.creadoPor === username
-      );
-
-      setProductosDisponibles(productos);
-      setPedidos(pedidosPropios);
+    const hydrate = async () => {
+      try {
+        const [prodRes, pedRes] = await Promise.all([getProductos(), getPedidos()]);
+        setProductosDisponibles((prodRes.data.results ?? prodRes.data));
+        setPedidos((pedRes.data.results ?? pedRes.data).map(normalizePedido));
+      } catch (err) {
+        console.error('Error al cargar datos:', err);
+      }
     };
-
     hydrate();
-    window.addEventListener('sigirl-data-updated', hydrate);
-    return () => window.removeEventListener('sigirl-data-updated', hydrate);
   }, [user]);
 
   const reactivoSeleccionado = useMemo(
@@ -56,6 +59,7 @@ const UsuarioDashboard = () => {
 
   const resetFormPedido = () => {
     setFormPedido({
+      productoId: '',
       producto: '',
       cantidad: '',
       prioridad: 'media',
@@ -67,11 +71,10 @@ const UsuarioDashboard = () => {
       protocolos: '',
       supervision: 'si'
     });
-
   };
 
-  const handleGuardarPedido = () => {
-    if (!formPedido.producto || !formPedido.cantidad) {
+  const handleGuardarPedido = async () => {
+    if (!formPedido.productoId || !formPedido.cantidad) {
       toast.error('Por favor completa todos los campos');
       return;
     }
@@ -89,58 +92,53 @@ const UsuarioDashboard = () => {
       }
     }
 
-    const { pedidos: pedidosStore } = loadSigirlCollections();
-    const evaluacion = evaluateReactivoAccess(formPedido.producto, cuestionario);
-    const nextId = Math.max(...pedidosStore.map((p) => p.id), 0) + 1;
+    const evaluacion = reactivoSeleccionado
+      ? evaluateReactivoAccess(formPedido.producto, cuestionario)
+      : { reactivoCritico: false };
 
-    const nuevoPedido = {
-      id: nextId,
-      codigo: `PED-2024-${String(nextId).padStart(3, '0')}`,
-      producto: formPedido.producto,
+    const payload = {
+      producto: formPedido.productoId,
       cantidad: parseInt(formPedido.cantidad, 10),
-      solicitante: user?.username || 'Usuario Actual',
-      creadoPor: user?.username || 'Usuario Actual',
-      departamento: 'Laboratorio General',
-      estado: 'pendiente',
       prioridad: formPedido.prioridad,
-      fecha_solicitud: new Date().toISOString().split('T')[0],
-      fecha_respuesta: null,
+      departamento: 'Laboratorio General',
       observaciones: [
         formPedido.observaciones,
-        evaluacion.reactivoCritico ? `Evaluación de seguridad: ${evaluacion.puntaje}/${evaluacion.puntajeMinimo}. ${evaluacion.detalle}` : null,
+        evaluacion.reactivoCritico
+          ? `Evaluación de seguridad: ${evaluacion.puntaje}/${evaluacion.puntajeMinimo}. ${evaluacion.detalle}`
+          : null,
       ].filter(Boolean).join(' | '),
       evaluacion_seguridad: evaluacion.reactivoCritico ? evaluacion : null,
     };
 
-    const nuevosPedidos = [nuevoPedido, ...pedidosStore];
-    saveSigirlCollections({ pedidos: nuevosPedidos });
-    setPedidos(nuevosPedidos.filter((pedido) => pedido.solicitante === (user?.username || 'Usuario Actual') || pedido.creadoPor === (user?.username || 'Usuario Actual')));
+    try {
+      const { data } = await createPedido(payload);
+      setPedidos((prev) => [normalizePedido(data), ...prev]);
 
-    if (evaluacion.reactivoCritico) {
-      appendSystemAlert({
-        tipo: 'reactivo',
-        prioridad: evaluacion.aprobado ? 'media' : 'alta',
-        titulo: evaluacion.aprobado
-          ? `Solicitud restringida pendiente de autorización: ${formPedido.producto}`
-          : `Alerta por capacidad insuficiente: ${formPedido.producto}`,
-        descripcion: `${user?.username || 'Usuario'} solicitó ${formPedido.producto} con puntaje ${evaluacion.puntaje}/${evaluacion.puntajeMinimo}.`,
-        remitente: user?.username || 'Usuario',
-        destinatario: 'Admin y Jefe',
-      });
+      if (evaluacion.reactivoCritico) {
+        createAlerta({
+          tipo: 'reactivo',
+          titulo: evaluacion.aprobado
+            ? `Solicitud restringida pendiente de autorización: ${formPedido.producto}`
+            : `Alerta por capacidad insuficiente: ${formPedido.producto}`,
+          descripcion: `${user?.username || 'Usuario'} solicitó ${formPedido.producto} con puntaje ${evaluacion.puntaje}/${evaluacion.puntajeMinimo}.`,
+          remitente: user?.username || 'Usuario',
+          prioridad: evaluacion.aprobado ? 'media' : 'alta',
+        }).catch(() => {});
+      }
+
+      resetFormPedido();
+      setShowModal(false);
+      toast.success(
+        evaluacion.reactivoCritico
+          ? evaluacion.aprobado
+            ? 'Pedido enviado. El reactivo restringido quedó pendiente de autorización.'
+            : 'Pedido registrado con alerta automática por puntaje insuficiente.'
+          : 'Pedido creado exitosamente. Un administrador revisará tu solicitud.'
+      );
+    } catch (err) {
+      toast.error(err.response?.data?.error || Object.values(err.response?.data || {}).flat().join(' ') || 'Error al crear pedido');
     }
-
-    resetFormPedido();
-    setShowModal(false);
-
-    toast.success(
-      evaluacion.reactivoCritico
-        ? evaluacion.aprobado
-          ? 'Pedido enviado. El reactivo restringido quedó pendiente de autorización.'
-          : 'Pedido registrado con alerta automática por puntaje insuficiente.'
-        : 'Pedido creado exitosamente. Un administrador revisará tu solicitud.'
-    );
   };
-
   const filteredPedidos = pedidos.filter(pedido => {
     const matchesSearch = pedido.producto.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          pedido.codigo.toLowerCase().includes(searchTerm.toLowerCase());
@@ -283,8 +281,9 @@ const UsuarioDashboard = () => {
                 </div>
                 <button
                   onClick={() => {
+                    const prod = productosDisponibles.find((p) => p.nombre === reactivo.nombre);
                     setShowModal(true);
-                    setFormPedido((prev) => ({ ...prev, producto: reactivo.nombre, prioridad: 'alta' }));
+                    setFormPedido((prev) => ({ ...prev, producto: reactivo.nombre, productoId: prod?.id || '', prioridad: 'alta' }));
                   }}
                   className="px-4 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold text-sm shadow-md"
                 >
@@ -443,13 +442,17 @@ const UsuarioDashboard = () => {
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2.5 uppercase tracking-wide">Producto</label>
                 <select
-                  value={formPedido.producto}
-                  onChange={(e) => setFormPedido({ ...formPedido, producto: e.target.value })}
+                  value={formPedido.productoId}
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    const prod = productosDisponibles.find((p) => p.id === id);
+                    setFormPedido({ ...formPedido, productoId: id, producto: prod?.nombre || '' });
+                  }}
                   className="w-full border border-slate-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm transition-all bg-slate-50 hover:bg-white"
                 >
                   <option value="">Selecciona un producto</option>
                   {productosDisponibles.map((producto) => (
-                    <option key={producto.id} value={producto.nombre}>{producto.nombre}</option>
+                    <option key={producto.id} value={producto.id}>{producto.nombre}</option>
                   ))}
                 </select>
               </div>

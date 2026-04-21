@@ -4,7 +4,9 @@ import { Bell, LifeBuoy, Search, X, AlertCircle, HelpCircle, Sparkles } from 'lu
 import { toast } from 'react-toastify';
 import Sidebar from './Sidebar';
 import { UserContext } from '../context/AuthContext';
-import { appendSystemAlert } from '../utils/sigirlStorage';
+import { createAlerta } from '../services/api';
+
+const normalizeAlertType = (tipo) => (tipo === 'problema' || tipo === 'ayuda' ? 'otro' : tipo || 'otro');
 
 const Layout = ({ children }) => {
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -25,24 +27,28 @@ const Layout = ({ children }) => {
   const avatarSrc = user?.profile?.avatar || user?.avatar || '';
   const initials = `${displayName?.[0] || 'U'}${displayName?.[1] || ''}`.toUpperCase();
 
-  const handleHelpSubmit = () => {
+  const handleHelpSubmit = async () => {
     if (!helpForm.descripcion.trim()) {
       toast.error('Describe brevemente la alerta o la ayuda que necesitas.');
       return;
     }
 
-    appendSystemAlert({
-      tipo: helpForm.tipo,
-      prioridad: helpForm.prioridad,
-      titulo: helpForm.tipo === 'problema' ? 'Reporte de problema en el sistema' : 'Solicitud de ayuda del usuario',
-      descripcion: helpForm.descripcion.trim(),
-      remitente: user?.username || 'Usuario',
-      destinatario: role === 'usuario' ? 'Admin y Jefe' : 'Equipo responsable',
-    });
-
-    setHelpForm({ tipo: 'ayuda', prioridad: 'media', descripcion: '' });
-    setShowHelpModal(false);
-    toast.success('Tu reporte fue enviado correctamente.');
+    try {
+      await createAlerta({
+        tipo: normalizeAlertType(helpForm.tipo),
+        prioridad: helpForm.prioridad,
+        titulo: helpForm.tipo === 'problema' ? 'Reporte de problema en el sistema' : 'Solicitud de ayuda del usuario',
+        descripcion: helpForm.descripcion.trim(),
+        mensaje: helpForm.descripcion.trim(),
+        remitente: user?.username || 'Usuario',
+        resuelta: false,
+      });
+      setHelpForm({ tipo: 'ayuda', prioridad: 'media', descripcion: '' });
+      setShowHelpModal(false);
+      toast.success('Tu reporte fue enviado correctamente.');
+    } catch {
+      toast.error('No se pudo enviar el reporte. Inténtalo de nuevo.');
+    }
   };
 
   return (

@@ -13,9 +13,9 @@ api.interceptors.request.use((config) => {
   const requestUrl = config.url || "";
   const isPublicRoute = ["token/", "register/"].some((route) => requestUrl.includes(route));
 
-  if (token) {
+  if (token && !isPublicRoute) {
     config.headers.Authorization = `Bearer ${token}`;
-  } else if (!isPublicRoute) {
+  } else if (!token && !isPublicRoute) {
     console.warn("Sesión no encontrada para esta solicitud");
   }
 
@@ -34,9 +34,40 @@ api.interceptors.response.use(
       console.error("❌ 401 - Token inválido o expirado");
       localStorage.removeItem("token");
       window.location.href = "/login";
+    } else if (error.response?.status === 403) {
+      import('react-toastify').then(({ toast }) => {
+        toast.error('No tienes permiso para realizar esta acción.');
+      });
+    } else if (error.response?.status >= 500) {
+      import('react-toastify').then(({ toast }) => {
+        toast.error('Error interno del servidor. Intenta de nuevo.');
+      });
     }
     return Promise.reject(error);
   }
 );
+
+// ── Productos ──────────────────────────────────────────────
+export const getProductos   = ()         => api.get('productos/');
+export const createProducto = (data)     => api.post('productos/', data);
+export const updateProducto = (id, data) => api.patch(`productos/${id}/`, data);
+export const deleteProducto = (id)       => api.delete(`productos/${id}/`);
+
+// ── Pedidos ────────────────────────────────────────────────
+export const getPedidos   = ()         => api.get('pedidos/');
+export const createPedido = (data)     => api.post('pedidos/', data);
+export const updatePedido = (id, data) => api.patch(`pedidos/${id}/`, data);
+export const deletePedido = (id)       => api.delete(`pedidos/${id}/`);
+
+// ── Alertas ────────────────────────────────────────────────
+export const getAlertas   = ()         => api.get('alertas/');
+export const createAlerta = (data)     => api.post('alertas/', data);
+export const updateAlerta = (id, data) => api.patch(`alertas/${id}/`, data);
+
+// ── Usuarios (gestión staff) ───────────────────────────────
+export const getUsuarios   = ()         => api.get('usuarios/');
+export const createUsuario = (data)     => api.post('usuarios/', data);
+export const updateUsuario = (id, data) => api.patch(`usuarios/${id}/`, data);
+export const deleteUsuario = (id)       => api.delete(`usuarios/${id}/`);
 
 export default api;

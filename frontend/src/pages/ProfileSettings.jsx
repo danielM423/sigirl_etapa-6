@@ -20,9 +20,8 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import Layout from '../components/Layout';
-import api from '../services/api';
 import { UserContext } from '../context/AuthContext';
-import { loadSigirlCollections, saveSigirlCollections } from '../utils/sigirlStorage';
+import api, { getPedidos } from '../services/api';
 
 const EMPTY_FORM = {
   username: '',
@@ -85,6 +84,7 @@ const ProfileSettings = () => {
   const [deleting, setDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [preferences, setPreferences] = useState(DEFAULT_PREFS);
+  const [actividadPedidos, setActividadPedidos] = useState([]);
 
   const dashboardPath = getDashboardPath(role);
   const roleLabel = getRoleLabel(role);
@@ -98,17 +98,16 @@ const ProfileSettings = () => {
   const activityData = useMemo(() => {
     const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'];
     const fallback = [30, 45, 60, 55, 75, 90];
-    const { pedidos = [] } = loadSigirlCollections();
     const username = (user?.username || form.username || '').toLowerCase();
 
-    const propios = pedidos.filter((pedido) => {
-      const candidates = [pedido.solicitante, pedido.creadoPor, pedido.usuario_username]
+    const propios = actividadPedidos.filter((pedido) => {
+      const candidates = [pedido.solicitante, pedido.usuario_username]
         .filter(Boolean)
         .map((item) => String(item).toLowerCase());
       return username && candidates.includes(username);
     });
 
-    const source = propios.length > 0 ? propios : pedidos;
+    const source = propios.length > 0 ? propios : actividadPedidos;
 
     return months.map((name, index) => {
       const month = String(index + 1).padStart(2, '0');
@@ -118,42 +117,7 @@ const ProfileSettings = () => {
         value: total > 0 ? total * 15 : fallback[index],
       };
     });
-  }, [form.username, user?.username]);
-
-  const syncUsuariosStorage = useCallback((profileData, shouldRemove = false) => {
-    const { usuarios } = loadSigirlCollections();
-
-    if (shouldRemove) {
-      const filtrados = usuarios.filter((item) => {
-        const sameEmail = (item.email || '').toLowerCase() === (profileData.email || '').toLowerCase();
-        const sameUsername = (item.username || '').toLowerCase() === (profileData.username || '').toLowerCase();
-        return !sameEmail && !sameUsername;
-      });
-      saveSigirlCollections({ usuarios: filtrados });
-      return;
-    }
-
-    const nuevoUsuario = {
-      id: profileData.id || Date.now(),
-      username: profileData.username,
-      nombre: profileData.full_name || `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || profileData.username,
-      email: profileData.email || '',
-      departamento: profileData.profile?.department || '',
-      rol: profileData.role || 'usuario',
-      avatar: profileData.profile?.avatar || '',
-    };
-
-    const actualizados = [
-      nuevoUsuario,
-      ...usuarios.filter((item) => {
-        const sameEmail = (item.email || '').toLowerCase() === (profileData.email || '').toLowerCase();
-        const sameUsername = (item.username || '').toLowerCase() === (profileData.username || '').toLowerCase();
-        return !sameEmail && !sameUsername;
-      }),
-    ];
-
-    saveSigirlCollections({ usuarios: actualizados });
-  }, []);
+  }, [form.username, user?.username, actividadPedidos]);
 
   const applyProfileData = useCallback((data) => {
     setForm({
@@ -169,17 +133,19 @@ const ProfileSettings = () => {
       avatar: data.profile?.avatar || '',
     });
     setUser(data);
-    syncUsuariosStorage(data);
-  }, [setUser, syncUsuariosStorage]);
+  }, [setUser]);
 
   useEffect(() => {
     let active = true;
 
     const fetchProfile = async () => {
       try {
-        const { data } = await api.get('auth/profile/');
+        const [profileRes] = await Promise.all([
+          api.get('auth/profile/'),
+          getPedidos().then((res) => setActividadPedidos(res.data || [])).catch(() => {}),
+        ]);
         if (active) {
-          applyProfileData(data);
+          applyProfileData(profileRes.data);
         }
       } catch {
         toast.error('No se pudo cargar la información del perfil');
@@ -334,7 +300,6 @@ const ProfileSettings = () => {
 
     try {
       await api.delete('auth/profile/');
-      syncUsuariosStorage({ username: form.username, email: form.email }, true);
       logout();
       navigate('/login');
       toast.success('Tu cuenta fue eliminada');

@@ -6,7 +6,7 @@ import { Search, ChevronDown, Plus, User, Eye, CheckCircle2, XCircle, ShoppingCa
 import Layout from '../components/Layout';
 import { UserContext } from '../context/AuthContext';
 import { exportToExcel } from '../utils/reportExport';
-import { loadSigirlCollections, saveSigirlCollections } from '../utils/sigirlStorage';
+import { getPedidos, createPedido, updatePedido, getProductos } from '../services/api';
 
 const Pedidos = () => {
   const { user, role } = useContext(UserContext);
@@ -15,6 +15,7 @@ const Pedidos = () => {
   const currentUsername = (user?.username || localStorage.getItem('username') || 'usuario').toLowerCase();
 
   const [pedidos, setPedidos] = useState([]);
+  const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('todos');
@@ -23,22 +24,27 @@ const Pedidos = () => {
   
   // Formulario para nuevo pedido
   const [formPedido, setFormPedido] = useState({
-    producto: '',
+    productoId: '',
     cantidad: '',
     prioridad: 'media',
     observaciones: ''
   });
 
-  useEffect(() => {
-    const hydrate = () => {
-      const { pedidos: pedidosStore } = loadSigirlCollections();
-      setPedidos(pedidosStore);
-      setLoading(false);
-    };
+  const normalizePedido = (p) => ({
+    ...p,
+    producto: p.producto_nombre || p.producto || '',
+    solicitante: p.solicitante || p.usuario_username || '',
+    codigo: p.codigo || `PED-${String(p.id).padStart(3, '0')}`,
+  });
 
-    hydrate();
-    window.addEventListener('sigirl-data-updated', hydrate);
-    return () => window.removeEventListener('sigirl-data-updated', hydrate);
+  useEffect(() => {
+    Promise.all([
+      getPedidos().catch(() => ({ data: [] })),
+      getProductos().catch(() => ({ data: [] })),
+    ]).then(([pedidosRes, productosRes]) => {
+      setPedidos((pedidosRes.data || []).map(normalizePedido));
+      setProductos(productosRes.data || []);
+    }).finally(() => setLoading(false));
   }, []);
 
   const getEstadoBadge = (estado) => {
@@ -128,72 +134,55 @@ const Pedidos = () => {
   };
 
   // 🎯 FUNCIONES PARA MANEJAR PEDIDOS
-  const handleGuardarPedido = () => {
-    if (!formPedido.producto || !formPedido.cantidad) {
+  const handleGuardarPedido = async () => {
+    if (!formPedido.productoId || !formPedido.cantidad) {
       toast.error('Por favor completa todos los campos');
       return;
     }
 
-    // Crear nuevo pedido
-    const nuevoPedido = {
-      id: Math.max(...pedidos.map(p => p.id), 0) + 1,
-      codigo: `PED-2024-${String(Math.max(...pedidos.map(p => p.id), 0) + 1).padStart(3, '0')}`,
-      producto: formPedido.producto,
-      cantidad: parseInt(formPedido.cantidad),
-      solicitante: user?.full_name || user?.username || localStorage.getItem('username') || 'Usuario Actual',
-      creadoPor: user?.username || localStorage.getItem('username') || 'usuario',
-      usuario_username: user?.username || localStorage.getItem('username') || 'usuario',
-      departamento: user?.profile?.department || 'Laboratorio General',
-      estado: 'pendiente',
-      prioridad: formPedido.prioridad,
-      fecha_solicitud: new Date().toISOString().split('T')[0],
-      fecha_entrega: null,
-      observaciones: formPedido.observaciones
-    };
-
-    const nuevosPedidos = [...pedidos, nuevoPedido];
-    setPedidos(nuevosPedidos);
-    saveSigirlCollections({ pedidos: nuevosPedidos });
-    
-    // Limpiar formulario y cerrar modal
-    setFormPedido({
-      producto: '',
-      cantidad: '',
-      prioridad: 'media',
-      observaciones: ''
-    });
-    setShowModal(false);
-    toast.success('Pedido creado exitosamente');
+    try {
+      const res = await createPedido({
+        producto: Number(formPedido.productoId),
+        cantidad: parseInt(formPedido.cantidad),
+        prioridad: formPedido.prioridad,
+        observaciones: formPedido.observaciones,
+      });
+      setPedidos((prev) => [normalizePedido(res.data), ...prev]);
+      setFormPedido({ productoId: '', cantidad: '', prioridad: 'media', observaciones: '' });
+      setShowModal(false);
+      toast.success('Pedido creado exitosamente');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al crear el pedido');
+    }
   };
 
-  const handleAprobarPedido = (id) => {
+  const handleAprobarPedido = async (id) => {
     if (!canManagePedidos) {
       toast.error('Tu rol no puede aprobar pedidos.');
       return;
     }
-
-    const nuevosPedidos = pedidos.map(p => 
-      p.id === id ? { ...p, estado: 'aprobado', fecha_entrega: new Date().toISOString().split('T')[0] } : p
-    );
-    setPedidos(nuevosPedidos);
-    saveSigirlCollections({ pedidos: nuevosPedidos });
-    toast.success('Pedido aprobado');
+    try {
+      const res = await updatePedido(id, { estado: 'aprobado' });
+      setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(res.data) : p));
+      toast.success('Pedido aprobado');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al aprobar el pedido');
+    }
   };
 
-  const handleRechazarPedido = (id) => {
+  const handleRechazarPedido = async (id) => {
     if (!canManagePedidos) {
       toast.error('Tu rol no puede rechazar pedidos.');
       return;
     }
-
     const motivo = prompt('¿Cuál es el motivo del rechazo?');
-    if (motivo !== null) {
-      const nuevosPedidos = pedidos.map(p => 
-        p.id === id ? { ...p, estado: 'rechazado', observaciones: motivo } : p
-      );
-      setPedidos(nuevosPedidos);
-      saveSigirlCollections({ pedidos: nuevosPedidos });
+    if (motivo === null) return;
+    try {
+      const res = await updatePedido(id, { estado: 'rechazado', motivo_rechazo: motivo });
+      setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(res.data) : p));
       toast.error('Pedido rechazado');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al rechazar el pedido');
     }
   };
 
@@ -513,15 +502,13 @@ const Pedidos = () => {
               <div>
                 <label className="sigirl-form-label">Producto</label>
                 <select 
-                  value={formPedido.producto}
-                  onChange={(e) => setFormPedido({...formPedido, producto: e.target.value})}
+                  value={formPedido.productoId}
+                  onChange={(e) => setFormPedido({...formPedido, productoId: e.target.value})}
                   className="sigirl-form-control">
                   <option value="">Seleccionar producto...</option>
-                  <option value="Alcohol etílico">Alcohol etílico</option>
-                  <option value="Ácido clorhídrico">Ácido clorhídrico</option>
-                  <option value="Guantes nitrilo">Guantes nitrilo</option>
-                  <option value="Ácido sulfúrico">Ácido sulfúrico</option>
-                  <option value="Metanol">Metanol</option>
+                  {productos.map((p) => (
+                    <option key={p.id} value={p.id}>{p.nombre} (Stock: {p.cantidad})</option>
+                  ))}
                 </select>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

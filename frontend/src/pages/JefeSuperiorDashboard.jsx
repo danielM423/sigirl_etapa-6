@@ -7,14 +7,17 @@ import { Users, TrendingUp, AlertCircle, BarChart3, Search, ChevronDown, Eye, Do
 import Layout from '../components/Layout';
 import ReportPanel from '../components/ReportPanel';
 import { exportToExcel, exportToPdf } from '../utils/reportExport';
-import { appendSystemAlert, loadSigirlCollections, saveSigirlCollections } from '../utils/sigirlStorage';
+import {
+  getPedidos, createPedido, updatePedido, deletePedido,
+  getAlertas, createAlerta, updateAlerta,
+  getProductos, getUsuarios, createUsuario, updateUsuario, deleteUsuario,
+} from '../services/api';
 
 const pedidoVacio = {
   codigo: '',
-  producto: '',
+  productoId: '',
   cantidad: '',
   solicitante: '',
-  departamento: '',
   estado: 'pendiente',
   prioridad: 'media',
   fecha_solicitud: '',
@@ -25,7 +28,6 @@ const pedidoVacio = {
 const usuarioVacio = {
   nombre: '',
   email: '',
-  departamento: '',
   rol: 'usuario'
 };
 
@@ -33,6 +35,8 @@ const JefeSuperiorDashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [pedidos, setPedidos] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('todos');
@@ -50,6 +54,24 @@ const JefeSuperiorDashboard = () => {
   const [formUsuario, setFormUsuario] = useState(usuarioVacio);
 
   const getToday = () => new Date().toISOString().split('T')[0];
+  const formatDisplayDate = (value) => {
+    if (!value) return 'Sin fecha';
+
+    const normalizedValue = typeof value === 'string' && value.length <= 10
+      ? `${value}T00:00:00`
+      : value;
+    const parsed = new Date(normalizedValue);
+
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+
+    return new Intl.DateTimeFormat('es-CO', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(parsed);
+  };
 
   const changeTab = (tab) => {
     setSearchParams({ tab });
@@ -60,27 +82,44 @@ const JefeSuperiorDashboard = () => {
 
   const syncUsuariosConPedidos = (listaUsuarios, listaPedidos) =>
     listaUsuarios.map((usuario) => {
-      const pedidosUsuario = listaPedidos.filter((pedido) => pedido.solicitante === usuario.nombre);
+      const pedidosUsuario = listaPedidos.filter(
+        (pedido) => pedido.usuario_username === usuario.username || pedido.solicitante === usuario.nombre
+      );
       const rechazos = pedidosUsuario.filter((pedido) => pedido.estado === 'rechazado').length;
-
-      return {
-        ...usuario,
-        total_pedidos: pedidosUsuario.length,
-        rechazos,
-      };
+      return { ...usuario, total_pedidos: pedidosUsuario.length, rechazos };
     });
 
+  const normalizePedido = (p) => ({
+    ...p,
+    producto: p.producto_nombre || p.producto || '',
+    solicitante: p.solicitante || p.usuario_username || '',
+    codigo: p.codigo || `PED-${String(p.id).padStart(3, '0')}`,
+  });
+
   useEffect(() => {
-    const hydrate = () => {
-      const { pedidos: pedidosStore, usuarios: usuariosStore, alertas: alertasStore } = loadSigirlCollections();
-      setPedidos(pedidosStore);
-      setUsuarios(syncUsuariosConPedidos(usuariosStore, pedidosStore));
-      setAlertas(alertasStore);
+    const hydrate = async () => {
+      setLoading(true);
+      try {
+        const [pedidosRes, alertasRes, productosRes, usuariosRes] = await Promise.all([
+          getPedidos().catch(() => ({ data: [] })),
+          getAlertas().catch(() => ({ data: [] })),
+          getProductos().catch(() => ({ data: [] })),
+          getUsuarios().catch(() => ({ data: [] })),
+        ]);
+        const pedidosNorm = (pedidosRes.data || []).map(normalizePedido);
+        const usuariosData = usuariosRes.data || [];
+        setPedidos(pedidosNorm);
+        setAlertas(alertasRes.data || []);
+        setProductos(productosRes.data || []);
+        setUsuarios(syncUsuariosConPedidos(usuariosData, pedidosNorm));
+      } catch {
+        toast.error('Error al cargar datos del panel de jefatura');
+      } finally {
+        setLoading(false);
+      }
     };
 
     hydrate();
-    window.addEventListener('sigirl-data-updated', hydrate);
-    return () => window.removeEventListener('sigirl-data-updated', hydrate);
   }, []);
 
   const resetPedidoForm = () => {
@@ -88,8 +127,6 @@ const JefeSuperiorDashboard = () => {
       ...pedidoVacio,
       codigo: getNextPedidoCode(pedidos),
       fecha_solicitud: getToday(),
-      solicitante: usuarios[0]?.nombre || '',
-      departamento: usuarios[0]?.departamento || ''
     });
     setSelectedPedido(null);
   };
@@ -108,22 +145,21 @@ const JefeSuperiorDashboard = () => {
     setSelectedPedido(pedido);
     setFormPedido({
       codigo: pedido.codigo,
-      producto: pedido.producto,
+      productoId: pedido.producto_id || pedido.producto || '',
       cantidad: String(pedido.cantidad),
       solicitante: pedido.solicitante,
-      departamento: pedido.departamento,
       estado: pedido.estado,
-      prioridad: pedido.prioridad,
-      fecha_solicitud: pedido.fecha_solicitud,
+      prioridad: pedido.prioridad || 'media',
+      fecha_solicitud: pedido.fecha_solicitud || '',
       observaciones: pedido.observaciones || '',
       motivo_rechazo: pedido.motivo_rechazo || ''
     });
     setShowPedidoModal(true);
   };
 
-  const handleGuardarPedido = () => {
-    if (!formPedido.producto.trim() || !formPedido.solicitante || !formPedido.cantidad) {
-      toast.error('Completa los campos obligatorios del pedido');
+  const handleGuardarPedido = async () => {
+    if (!formPedido.productoId || !formPedido.cantidad) {
+      toast.error('Selecciona el producto y completa la cantidad');
       return;
     }
 
@@ -138,40 +174,47 @@ const JefeSuperiorDashboard = () => {
     }
 
     const payload = {
-      ...formPedido,
-      codigo: formPedido.codigo || getNextPedidoCode(pedidos),
-      producto: formPedido.producto.trim(),
+      producto: Number(formPedido.productoId),
       cantidad: Number(formPedido.cantidad),
-      departamento: formPedido.departamento.trim(),
+      estado: formPedido.estado,
+      prioridad: formPedido.prioridad,
       fecha_solicitud: formPedido.fecha_solicitud || getToday(),
-      fecha_respuesta: formPedido.estado === 'pendiente' ? null : getToday(),
+      observaciones: formPedido.observaciones,
+      motivo_rechazo: formPedido.estado === 'rechazado' ? formPedido.motivo_rechazo : '',
+      solicitante: formPedido.solicitante,
     };
 
-    const nuevosPedidos = selectedPedido
-      ? pedidos.map((pedido) => pedido.id === selectedPedido.id ? { ...pedido, ...payload } : pedido)
-      : [{ id: Date.now(), ...payload }, ...pedidos];
-
-    setPedidos(nuevosPedidos);
-    setUsuarios((prev) => syncUsuariosConPedidos(prev, nuevosPedidos));
-    saveSigirlCollections({ pedidos: nuevosPedidos, usuarios: syncUsuariosConPedidos(usuarios, nuevosPedidos) });
-    setShowPedidoModal(false);
-    resetPedidoForm();
-    toast.success(selectedPedido ? 'Pedido actualizado' : 'Pedido creado');
+    try {
+      if (selectedPedido) {
+        const res = await updatePedido(selectedPedido.id, payload);
+        setPedidos((prev) => prev.map((p) => p.id === selectedPedido.id ? normalizePedido(res.data) : p));
+        toast.success('Pedido actualizado');
+      } else {
+        const res = await createPedido(payload);
+        setPedidos((prev) => [normalizePedido(res.data), ...prev]);
+        toast.success('Pedido creado');
+      }
+      setShowPedidoModal(false);
+      resetPedidoForm();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al guardar pedido');
+    }
   };
 
-  const handleEliminarPedido = (id) => {
+  const handleEliminarPedido = async (id) => {
     const pedido = pedidos.find((item) => item.id === id);
     if (!pedido) return;
 
     const confirmar = window.confirm(`¿Eliminar el pedido ${pedido.codigo}?`);
     if (!confirmar) return;
 
-    const nuevosPedidos = pedidos.filter((item) => item.id !== id);
-    const nuevosUsuarios = syncUsuariosConPedidos(usuarios, nuevosPedidos);
-    setPedidos(nuevosPedidos);
-    setUsuarios(nuevosUsuarios);
-    saveSigirlCollections({ pedidos: nuevosPedidos, usuarios: nuevosUsuarios });
-    toast.success('Pedido eliminado');
+    try {
+      await deletePedido(id);
+      setPedidos((prev) => prev.filter((item) => item.id !== id));
+      toast.success('Pedido eliminado');
+    } catch {
+      toast.error('Error al eliminar el pedido');
+    }
   };
 
   const handleVerPedido = (pedido) => {
@@ -183,7 +226,7 @@ const JefeSuperiorDashboard = () => {
       `Departamento: ${pedido.departamento}`,
       `Estado: ${pedido.estado}`,
       `Prioridad: ${pedido.prioridad}`,
-      `Fecha solicitud: ${pedido.fecha_solicitud}`,
+      `Fecha solicitud: ${formatDisplayDate(pedido.fecha_solicitud)}`,
       pedido.evaluacion_seguridad?.reactivoCritico ? `Puntaje seguridad: ${pedido.evaluacion_seguridad.puntaje}/${pedido.evaluacion_seguridad.puntajeMinimo}` : null,
       pedido.observaciones ? `Observaciones: ${pedido.observaciones}` : null,
       pedido.motivo_rechazo ? `Motivo rechazo: ${pedido.motivo_rechazo}` : null,
@@ -198,7 +241,7 @@ const JefeSuperiorDashboard = () => {
     );
   };
 
-  const handleCambiarEstadoPedido = (pedido, estado) => {
+  const handleCambiarEstadoPedido = async (pedido, estado) => {
     let motivoRechazo = pedido.motivo_rechazo || '';
 
     if (estado === 'rechazado') {
@@ -211,34 +254,26 @@ const JefeSuperiorDashboard = () => {
       motivoRechazo = motivo;
     }
 
-    const nuevosPedidos = pedidos.map((item) =>
-      item.id === pedido.id
-        ? {
-            ...item,
-            estado,
-            fecha_respuesta: getToday(),
-            motivo_rechazo: estado === 'rechazado' ? motivoRechazo : ''
-          }
-        : item
-    );
+    try {
+      const payload = { estado, motivo_rechazo: estado === 'rechazado' ? motivoRechazo : '' };
+      const res = await updatePedido(pedido.id, payload);
+      setPedidos((prev) => prev.map((p) => p.id === pedido.id ? normalizePedido(res.data) : p));
 
-    const nuevosUsuarios = syncUsuariosConPedidos(usuarios, nuevosPedidos);
-    setPedidos(nuevosPedidos);
-    setUsuarios(nuevosUsuarios);
-    saveSigirlCollections({ pedidos: nuevosPedidos, usuarios: nuevosUsuarios });
+      if (estado === 'aprobado' && pedido.evaluacion_seguridad?.reactivoCritico) {
+        await createAlerta({
+          tipo: 'autorizacion',
+          titulo: `Reactivo autorizado por jefe: ${pedido.producto}`,
+          descripcion: `El jefe superior autorizó la solicitud de ${pedido.solicitante}.`,
+          remitente: 'Jefe Superior',
+          prioridad: 'media',
+          mensaje: `Pedido ${pedido.codigo} aprobado.`,
+        }).catch(() => {});
+      }
 
-    if (estado === 'aprobado' && pedido.evaluacion_seguridad?.reactivoCritico) {
-      appendSystemAlert({
-        tipo: 'autorizacion',
-        prioridad: 'media',
-        titulo: `Reactivo autorizado por jefe: ${pedido.producto}`,
-        descripcion: `El jefe superior autorizó la solicitud de ${pedido.solicitante}.`,
-        remitente: 'Jefe Superior',
-        destinatario: pedido.solicitante,
-      });
+      toast.success(estado === 'aprobado' ? 'Pedido aprobado' : 'Pedido rechazado');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al cambiar estado');
     }
-
-    toast.success(estado === 'aprobado' ? 'Pedido aprobado' : 'Pedido rechazado');
   };
 
   const handleExportarPedidosExcel = () => {
@@ -261,7 +296,6 @@ const JefeSuperiorDashboard = () => {
       filteredUsuarios.map((usuario) => ({
         nombre: usuario.nombre,
         email: usuario.email,
-        departamento: usuario.departamento,
         rol: usuario.rol || 'usuario',
         total_pedidos: usuario.total_pedidos || 0,
         rechazos: usuario.rechazos || 0,
@@ -296,14 +330,13 @@ const JefeSuperiorDashboard = () => {
     setFormUsuario({
       nombre: usuario.nombre,
       email: usuario.email,
-      departamento: usuario.departamento,
       rol: usuario.rol || 'usuario'
     });
     setShowUsuarioModal(true);
   };
 
-  const handleGuardarUsuario = () => {
-    if (!formUsuario.nombre.trim() || !formUsuario.email.trim() || !formUsuario.departamento.trim()) {
+  const handleGuardarUsuario = async () => {
+    if (!formUsuario.nombre.trim() || !formUsuario.email.trim()) {
       toast.error('Completa todos los campos del usuario');
       return;
     }
@@ -314,7 +347,7 @@ const JefeSuperiorDashboard = () => {
     }
 
     const emailDuplicado = usuarios.some((usuario) =>
-      usuario.email.toLowerCase() === formUsuario.email.trim().toLowerCase() && usuario.id !== selectedUsuario?.id
+      usuario.email?.toLowerCase() === formUsuario.email.trim().toLowerCase() && usuario.id !== selectedUsuario?.id
     );
 
     if (emailDuplicado) {
@@ -323,55 +356,48 @@ const JefeSuperiorDashboard = () => {
     }
 
     const payload = {
-      nombre: formUsuario.nombre.trim(),
+      nombre_input: formUsuario.nombre.trim(),
       email: formUsuario.email.trim(),
-      departamento: formUsuario.departamento.trim(),
-      rol: formUsuario.rol
+      rol_input: formUsuario.rol
     };
 
-    const nuevosPedidos = selectedUsuario
-      ? pedidos.map((pedido) =>
-          pedido.solicitante === selectedUsuario.nombre
-            ? { ...pedido, solicitante: payload.nombre, departamento: payload.departamento }
-            : pedido
-        )
-      : pedidos;
-
-    const nuevosUsuarios = selectedUsuario
-      ? usuarios.map((usuario) => usuario.id === selectedUsuario.id ? { ...usuario, ...payload } : usuario)
-      : [{ id: Date.now(), ...payload, total_pedidos: 0, rechazos: 0 }, ...usuarios];
-
-    const usuariosSincronizados = syncUsuariosConPedidos(nuevosUsuarios, nuevosPedidos);
-    setPedidos(nuevosPedidos);
-    setUsuarios(usuariosSincronizados);
-    saveSigirlCollections({ pedidos: nuevosPedidos, usuarios: usuariosSincronizados });
-    setShowUsuarioModal(false);
-    resetUsuarioForm();
-    toast.success(selectedUsuario ? 'Usuario actualizado' : 'Usuario creado');
+    try {
+      if (selectedUsuario) {
+        const res = await updateUsuario(selectedUsuario.id, payload);
+        setUsuarios((prev) => prev.map((u) => u.id === selectedUsuario.id ? { ...u, ...res.data } : u));
+        toast.success('Usuario actualizado');
+      } else {
+        const res = await createUsuario(payload);
+        setUsuarios((prev) => [res.data, ...prev]);
+        toast.success('Usuario creado');
+      }
+      setShowUsuarioModal(false);
+      resetUsuarioForm();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al guardar usuario');
+    }
   };
 
-  const handleEliminarUsuario = (id) => {
+  const handleEliminarUsuario = async (id) => {
     const usuario = usuarios.find((item) => item.id === id);
     if (!usuario) return;
 
-    const confirmar = window.confirm(`¿Eliminar a ${usuario.nombre}? También se quitarán sus pedidos asociados.`);
+    const confirmar = window.confirm(`¿Eliminar a ${usuario.nombre}?`);
     if (!confirmar) return;
 
-    const nuevosPedidos = pedidos.filter((pedido) => pedido.solicitante !== usuario.nombre);
-    const nuevosUsuarios = usuarios.filter((item) => item.id !== id);
-
-    const usuariosSincronizados = syncUsuariosConPedidos(nuevosUsuarios, nuevosPedidos);
-    setPedidos(nuevosPedidos);
-    setUsuarios(usuariosSincronizados);
-    saveSigirlCollections({ pedidos: nuevosPedidos, usuarios: usuariosSincronizados });
-    toast.success('Usuario eliminado');
+    try {
+      await deleteUsuario(id);
+      setUsuarios((prev) => prev.filter((item) => item.id !== id));
+      toast.success('Usuario eliminado');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al eliminar el usuario');
+    }
   };
 
   const handleVerUsuario = (usuario) => {
     const detalle = [
       `Nombre: ${usuario.nombre}`,
       `Correo: ${usuario.email}`,
-      `Departamento: ${usuario.departamento}`,
       `Rol: ${usuario.rol || 'usuario'}`,
       `Total pedidos: ${usuario.total_pedidos || 0}`,
       `Rechazos: ${usuario.rechazos || 0}`,
@@ -440,8 +466,7 @@ const JefeSuperiorDashboard = () => {
     const text = userSearchTerm.toLowerCase();
     const matchesSearch =
       usuario.nombre.toLowerCase().includes(text) ||
-      usuario.email.toLowerCase().includes(text) ||
-      usuario.departamento.toLowerCase().includes(text);
+      usuario.email.toLowerCase().includes(text);
     const matchesRole = userRoleFilter === 'todos' || (usuario.rol || 'usuario') === userRoleFilter;
     return matchesSearch && matchesRole;
   });
@@ -474,7 +499,7 @@ const JefeSuperiorDashboard = () => {
       id: `pedido-${pedido.id}`,
       title: `${pedido.codigo} · ${pedido.estado}`,
       detail: `${pedido.solicitante} · ${pedido.producto}`,
-      date: pedido.fecha_respuesta || pedido.fecha_solicitud,
+      date: formatDisplayDate(pedido.fecha_respuesta || pedido.fecha_solicitud),
     })),
     ...alertas.slice(0, 3).map((alerta) => ({
       id: `alerta-${alerta.id}`,
@@ -484,13 +509,14 @@ const JefeSuperiorDashboard = () => {
     })),
   ].slice(0, 8);
 
-  const handleResolverAlerta = (id) => {
-    const nuevasAlertas = alertas.map((alerta) =>
-      alerta.id === id ? { ...alerta, estado: 'resuelta' } : alerta
-    );
-    setAlertas(nuevasAlertas);
-    saveSigirlCollections({ alertas: nuevasAlertas });
-    toast.success('Alerta actualizada');
+  const handleResolverAlerta = async (id) => {
+    try {
+      const res = await updateAlerta(id, { resuelta: true });
+      setAlertas((prev) => prev.map((a) => a.id === id ? res.data : a));
+      toast.success('Alerta actualizada');
+    } catch {
+      toast.error('Error al resolver la alerta');
+    }
   };
 
   return (
@@ -745,7 +771,7 @@ const JefeSuperiorDashboard = () => {
                             {pedido.prioridad}
                           </span>
                         </td>
-                        <td className="py-5 px-5 text-sm text-slate-600">{pedido.fecha_solicitud}</td>
+                        <td className="py-5 px-5 text-sm text-slate-600">{formatDisplayDate(pedido.fecha_solicitud)}</td>
                         <td className="py-5 px-5 text-center">{getEstadoBadge(pedido.estado)}</td>
                         <td className="py-5 px-5">
                           <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -934,7 +960,6 @@ const JefeSuperiorDashboard = () => {
                     <tr>
                       <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Nombre</th>
                       <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Email</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Departamento</th>
                       <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Rol</th>
                       <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Pedidos</th>
                       <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Rechazos</th>
@@ -944,7 +969,7 @@ const JefeSuperiorDashboard = () => {
                   <tbody className="divide-y divide-yellow-500/10">
                     {filteredUsuarios.length === 0 ? (
                       <tr>
-                        <td colSpan="7" className="py-16 text-center text-slate-600 font-medium">
+                        <td colSpan="6" className="py-16 text-center text-slate-600 font-medium">
                           No hay usuarios registrados
                         </td>
                       </tr>
@@ -957,11 +982,6 @@ const JefeSuperiorDashboard = () => {
                           </td>
                           <td className="py-5 px-5">
                             <p className="text-slate-600 text-sm">{usuario.email}</p>
-                          </td>
-                          <td className="py-5 px-5">
-                            <span className="inline-flex items-center px-3 py-1.5 rounded-md bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-300">
-                              {usuario.departamento}
-                            </span>
                           </td>
                           <td className="py-5 px-5 text-center">
                             <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-700 border-slate-300">
@@ -1035,42 +1055,25 @@ const JefeSuperiorDashboard = () => {
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Producto</label>
-                  <input
-                    type="text"
-                    value={formPedido.producto}
-                    onChange={(e) => setFormPedido({ ...formPedido, producto: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                    placeholder="Nombre del producto"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Solicitante</label>
                   <select
-                    value={formPedido.solicitante}
-                    onChange={(e) => {
-                      const usuario = usuarios.find((item) => item.nombre === e.target.value);
-                      setFormPedido({
-                        ...formPedido,
-                        solicitante: e.target.value,
-                        departamento: usuario?.departamento || ''
-                      });
-                    }}
+                    value={formPedido.productoId}
+                    onChange={(e) => setFormPedido({ ...formPedido, productoId: e.target.value })}
                     className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
                   >
-                    <option value="">Selecciona un usuario</option>
-                    {usuarios.map((usuario) => (
-                      <option key={usuario.id} value={usuario.nombre}>{usuario.nombre}</option>
+                    <option value="">Selecciona un producto</option>
+                    {productos.map((p) => (
+                      <option key={p.id} value={p.id}>{p.nombre} (Stock: {p.cantidad})</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Departamento</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Solicitante</label>
                   <input
                     type="text"
-                    value={formPedido.departamento}
-                    onChange={(e) => setFormPedido({ ...formPedido, departamento: e.target.value })}
+                    value={formPedido.solicitante}
+                    onChange={(e) => setFormPedido({ ...formPedido, solicitante: e.target.value })}
                     className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                    placeholder="Departamento"
+                    placeholder="Nombre del solicitante"
                   />
                 </div>
                 <div>
@@ -1190,16 +1193,6 @@ const JefeSuperiorDashboard = () => {
                     onChange={(e) => setFormUsuario({ ...formUsuario, email: e.target.value })}
                     className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-400"
                     placeholder="correo@dominio.com"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Departamento</label>
-                  <input
-                    type="text"
-                    value={formUsuario.departamento}
-                    onChange={(e) => setFormUsuario({ ...formUsuario, departamento: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                    placeholder="Departamento"
                   />
                 </div>
                 <div>

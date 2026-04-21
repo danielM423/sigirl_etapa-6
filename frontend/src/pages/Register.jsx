@@ -5,7 +5,6 @@ import { toast } from "react-toastify";
 import api from "../services/api";
 import { Link, useNavigate } from "react-router-dom";
 import { UserContext } from "../context/AuthContext";
-import { loadSigirlCollections, saveSigirlCollections } from "../utils/sigirlStorage";
 import { Mail, Lock, User, Eye, EyeOff, CheckCircle, AlertCircle, Building2, ArrowLeft, ShieldCheck } from "lucide-react";
 
 function Register() {
@@ -37,6 +36,7 @@ function Register() {
         ]
     : [
         { value: 'usuario', title: 'Usuario', description: 'Acceso estándar para solicitudes y consultas' },
+        { value: 'admin', title: 'Administrador', description: 'Acceso de administración para gestionar inventario y registros' },
       ];
 
   const [form, setForm] = useState({
@@ -168,15 +168,6 @@ function Register() {
     setLoading(true);
     setError("");
 
-    const existingRoles = JSON.parse(localStorage.getItem("userRoles") || "{}");
-    if (existingRoles[form.username.trim()]) {
-      const duplicateMessage = "El nombre de usuario ya existe";
-      setError(duplicateMessage);
-      toast.error(duplicateMessage);
-      setLoading(false);
-      return;
-    }
-
     try {
       const response = await api.post("register/", {
         username: form.username,
@@ -193,21 +184,8 @@ function Register() {
       const normalizedRole = form.role === "jefe_superior" ? "jefe" : form.role;
       const savedRoles = JSON.parse(localStorage.getItem("userRoles") || "{}");
       savedRoles[form.username] = normalizedRole;
-
       localStorage.setItem("userRoles", JSON.stringify(savedRoles));
 
-      const { usuarios } = loadSigirlCollections();
-      const usuariosActualizados = [
-        {
-          id: Date.now(),
-          nombre: `${form.firstName} ${form.lastName}`.trim() || form.username,
-          email: form.email,
-          departamento: form.department,
-          rol: normalizedRole,
-        },
-        ...usuarios.filter((usuario) => usuario.email.toLowerCase() !== form.email.toLowerCase()),
-      ];
-      saveSigirlCollections({ usuarios: usuariosActualizados });
       setLoading(false);
       setSuccess(true);
 

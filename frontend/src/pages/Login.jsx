@@ -2,10 +2,12 @@
 // Valida datos, solicita el token al backend y redirige al panel correcto.
 import { useState, useContext } from "react";
 import { toast } from "react-toastify";
-import api from "../services/api";
+import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { UserContext } from "../context/AuthContext";
 import { Eye, EyeOff } from "lucide-react";
+
+const normalizeRole = (role) => (role === "jefe_superior" ? "jefe" : role || "usuario");
 
 function Login() {
   // Estados locales del formulario de inicio de sesión.
@@ -26,41 +28,38 @@ function Login() {
       return;
     }
 
-    api.post("token/", { username, password })
-      .then(res => {
+    axios.post("http://127.0.0.1:8000/api/token/", { username, password })
+      .then(async res => {
         console.log("✅ Login exitoso");
-        toast.success("Inicio de sesión exitoso");
 
-        // Intenta obtener el rol desde la respuesta del backend.
-        // Si no viene, usa el mapa guardado en localStorage como respaldo.
-        const savedRoles = JSON.parse(localStorage.getItem("userRoles") || "{}");
+        const token = res.data.access || res.data.token || "authenticated";
+        const backendRole = normalizeRole(res.data?.role || res.data?.user?.role);
+        localStorage.setItem("token", token);
+        localStorage.setItem("username", res.data?.username || username);
 
-        let userRole =
-          res.data?.role ||
-          res.data?.user?.role ||
-          savedRoles[username] ||
-          "usuario";
-
-        if (userRole === "jefe_superior") {
-          userRole = "jefe";
+        // Consultar el perfil para rehidratar la sesión sin perder el rol del login.
+        let userRole = backendRole;
+        try {
+          const profileRes = await axios.get("http://127.0.0.1:8000/api/auth/profile/", {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          userRole = normalizeRole(profileRes.data?.role || backendRole);
+        } catch {
+          userRole = backendRole;
         }
 
-        localStorage.setItem("token", res.data.access || res.data.token || "authenticated");
-        localStorage.setItem("username", res.data?.username || username);
         localStorage.setItem("role", userRole);
-
         setUser({ ...res.data, username: res.data?.username || username, role: userRole });
         setRole(userRole);
-        
-        setTimeout(() => {
-          if (userRole === 'admin') {
-            navigate('/admin');
-          } else if (userRole === 'jefe') {
-            navigate('/jefe');
-          } else {
-            navigate('/usuario');
-          }
-        }, 100);
+        toast.success("Inicio de sesión exitoso");
+
+        if (userRole === 'admin') {
+          navigate('/admin');
+        } else if (userRole === 'jefe') {
+          navigate('/jefe');
+        } else {
+          navigate('/usuario');
+        }
       })
       .catch(err => {
         console.error("❌ Error en login:", err);

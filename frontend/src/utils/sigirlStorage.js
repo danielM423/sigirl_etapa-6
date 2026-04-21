@@ -211,7 +211,7 @@ const normalizePedido = (pedido) => ({
 
 const normalizeAlerta = (alerta) => ({
   id: Number(alerta.id),
-  tipo: alerta.tipo || 'ayuda',
+  tipo: alerta.tipo === 'ayuda' || alerta.tipo === 'problema' ? 'otro' : alerta.tipo || 'otro',
   titulo: alerta.titulo || 'Alerta SIGIRL',
   descripcion: alerta.descripcion || '',
   prioridad: (alerta.prioridad || 'media').toLowerCase(),
@@ -308,7 +308,7 @@ const buildPedidoPayload = async (item) => ({
 });
 
 const buildAlertaPayload = (item) => ({
-  tipo: item.tipo || 'ayuda',
+  tipo: item.tipo === 'ayuda' || item.tipo === 'problema' ? 'otro' : item.tipo || 'otro',
   titulo: item.titulo || 'Alerta SIGIRL',
   descripcion: item.descripcion || '',
   prioridad: (item.prioridad || 'media').toLowerCase(),
