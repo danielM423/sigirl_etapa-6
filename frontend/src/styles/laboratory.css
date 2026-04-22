@@ -1,0 +1,58 @@
+/* ============================================
+   LABORATORY DASHBOARD STYLE - SIGIRL (CLARO)
+   ============================================ */
+
+/* Variables del tema laboratorio claro */
+:root {
+  --lab-bg-primary: #f5f0e8;
+  --lab-bg-secondary: #ffffff;
+  --lab-bg-tertiary: #f8fafc;
+  --lab-border: #e2e8f0;
+  --lab-border-light: #f1f5f9;
+  --lab-accent: #22c55e;
+  --lab-accent-dark: #16a34a;
+  --lab-accent-glow: rgba(34, 197, 94, 0.1);
+  --lab-text-primary: #1e293b;
+  --lab-text-secondary: #475569;
+  --lab-text-dim: #64748b;
+  --lab-text-accent: #166534;
+  --lab-danger: #ef4444;
+  --lab-warning: #f59e0b;
+  --lab-info: #3b82f6;
+}
+
+/* LEDs */
+.led-green {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lab-accent);
+  box-shadow: 0 0 4px var(--lab-accent);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #22c55e;
+}

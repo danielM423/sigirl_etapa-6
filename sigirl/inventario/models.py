@@ -1,35 +1,17 @@
 from datetime import date
-from django.db import models
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.contrib.auth.models import User
 
+from django.contrib.auth.models import User
+from django.db import models
+
+# 📁 Categoría de productos
 class Categoria(models.Model):
-    nombre = models.CharField(max_length=100, unique=True)
+    nombre = models.CharField(max_length=100)
 
     def __str__(self):
         return self.nombre
 
-class UserProfile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
-    avatar = models.TextField(blank=True, null=True)
-    phone = models.CharField(max_length=30, blank=True)
-    department = models.CharField(max_length=120, blank=True)
-    institution = models.CharField(max_length=150, blank=True)
-    cargo = models.CharField(max_length=120, blank=True)
-    bio = models.TextField(blank=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
-    def __str__(self):
-        return f"Perfil de {self.user.username}"
-
-@receiver(post_save, sender=User)
-def ensure_user_profile(sender, instance, created, **kwargs):
-    if created:
-        UserProfile.objects.create(user=instance)
-    else:
-        UserProfile.objects.get_or_create(user=instance)
-
+# 🧪 Producto (reactivo, insumo o equipo)
 class Producto(models.Model):
     TIPOS = [
         ('reactivo', 'Reactivo'),
@@ -38,20 +20,22 @@ class Producto(models.Model):
     ]
 
     nombre = models.CharField(max_length=150)
-    tipo = models.CharField(max_length=20, choices=TIPOS, default='reactivo')
-    categoria = models.ForeignKey(Categoria, on_delete=models.CASCADE, related_name='productos')
-    cantidad = models.IntegerField(default=0)
-    minimo = models.IntegerField(default=0)
+    tipo = models.CharField(max_length=20, choices=TIPOS)
+    categoria = models.ForeignKey(Categoria, on_delete=models.CASCADE)
+    cantidad = models.IntegerField()
+    minimo = models.IntegerField()
     ubicacion = models.CharField(max_length=100, blank=True, null=True)
     fecha_vencimiento = models.DateField(blank=True, null=True)
-    ultima_actualizacion = models.DateField(auto_now=True)
+    ultima_actualizacion = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.nombre
 
+    # 🔔 ALERTA: bajo stock
     def bajo_stock(self):
         return self.cantidad <= self.minimo
 
+    # ⏳ ALERTA: por vencer (7 días)
     def por_vencer(self):
         if self.fecha_vencimiento:
             return (self.fecha_vencimiento - date.today()).days <= 7
@@ -61,43 +45,44 @@ class Producto(models.Model):
     def estado(self):
         if self.cantidad <= 0:
             return 'agotado'
-        if self.cantidad <= self.minimo:
+        elif self.cantidad <= self.minimo:
             return 'bajo_stock'
         return 'ok'
 
+
+# 📊 Movimientos (entrada/salida)
 class Movimiento(models.Model):
     TIPOS = [
         ('entrada', 'Entrada'),
         ('salida', 'Salida'),
     ]
 
-    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='movimientos')
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE)
     tipo = models.CharField(max_length=10, choices=TIPOS)
     cantidad = models.IntegerField()
     fecha = models.DateTimeField(auto_now_add=True)
     observacion = models.TextField(blank=True, null=True)
 
-    class Meta:
-        ordering = ['-fecha']
-
     def __str__(self):
         return f"{self.tipo} - {self.producto.nombre}"
+    
+    from django.contrib.auth.models import User
 
 class Pedido(models.Model):
-    ESTADOS = [
-        ('pendiente', 'Pendiente'),
-        ('aprobado', 'Aprobado'),
-        ('rechazado', 'Rechazado'),
-    ]
-
     PRIORIDADES = [
         ('baja', 'Baja'),
         ('media', 'Media'),
         ('alta', 'Alta'),
     ]
 
+    ESTADOS = [
+        ('pendiente', 'Pendiente'),
+        ('aprobado', 'Aprobado'),
+        ('rechazado', 'Rechazado'),
+    ]
+
     usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pedidos')
-    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='pedidos')
+    producto = models.ForeignKey('Producto', on_delete=models.CASCADE, related_name='pedidos')
     codigo = models.CharField(max_length=30, unique=True, blank=True, null=True)
     cantidad = models.IntegerField(default=1)
     estado = models.CharField(max_length=20, choices=ESTADOS, default='pendiente')
@@ -115,78 +100,37 @@ class Pedido(models.Model):
         ordering = ['-fecha_solicitud', '-id']
 
     def save(self, *args, **kwargs):
-        if self.usuario_id:
-            nombre_base = self.usuario.get_full_name().strip() or self.usuario.username
-            if not self.solicitante:
-                self.solicitante = nombre_base
-            if not self.creado_por:
-                self.creado_por = self.usuario.username
-
-        is_new = self._state.adding
+        if not self.codigo:
+            base_id = self.pk or (Pedido.objects.order_by('-id').values_list('id', flat=True).first() or 0) + 1
+            self.codigo = f'PED-{base_id:04d}'
+        if not self.solicitante:
+            self.solicitante = self.usuario.get_full_name().strip() or self.usuario.username
+        if not self.creado_por:
+            self.creado_por = self.usuario.username
         super().save(*args, **kwargs)
 
-        if is_new and not self.codigo:
-            self.codigo = f"PED-{self.fecha_solicitud.year}-{self.pk:04d}"
-            super().save(update_fields=['codigo'])
-
     def __str__(self):
-        return f"{self.solicitante or self.usuario.username} - {self.producto.nombre} ({self.estado})"
+        return f"{self.usuario} - {self.producto} ({self.estado})"
 
-class Auditoria(models.Model):
-    ACCIONES = [
-        ('crear', 'Crear'),
-        ('editar', 'Editar'),
-        ('eliminar', 'Eliminar'),
-        ('aprobar', 'Aprobar'),
-        ('rechazar', 'Rechazar'),
-    ]
-    MODULOS = [
-        ('inventario', 'Inventario'),
-        ('pedidos', 'Pedidos'),
-        ('usuarios', 'Usuarios'),
-        ('alertas', 'Alertas'),
-    ]
 
-    usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='auditorias')
-    accion = models.CharField(max_length=20, choices=ACCIONES)
-    modulo = models.CharField(max_length=20, choices=MODULOS)
-    descripcion = models.TextField()
-    fecha = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-fecha', '-id']
-
-    def __str__(self):
-        return f"{self.usuario} - {self.accion} - {self.modulo}"
-
+# 📋 Historial de cambios
 class HistorialCambio(models.Model):
-    MODELO_CHOICES = [
-        ('producto', 'Producto'),
-        ('pedido', 'Pedido'),
-    ]
-
-    modelo = models.CharField(max_length=20, choices=MODELO_CHOICES)
-    objeto_id = models.PositiveIntegerField()
-    campo = models.CharField(max_length=100)
-    valor_anterior = models.TextField(null=True, blank=True)
-    valor_nuevo = models.TextField(null=True, blank=True)
-    usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    modelo = models.CharField(max_length=100, blank=True, default='')
+    campo = models.CharField(max_length=100, blank=True, default='')
+    valor_anterior = models.TextField(blank=True, default='')
+    valor_nuevo = models.TextField(blank=True, default='')
     fecha = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
-        ordering = ['-fecha']
-
     def __str__(self):
-        return f"{self.modelo} {self.objeto_id} - {self.campo}"
+        return f"{self.usuario} - {self.modelo} - {self.campo}"
 
 
+# 🚨 Alertas del sistema
 class Alerta(models.Model):
     TIPOS = [
-        ('bajo_stock', 'Bajo Stock'),
-        ('vencimiento', 'Vencimiento Próximo'),
-        ('agotado', 'Agotado'),
-        ('reactivo', 'Reactivo Crítico'),
-        ('autorizacion', 'Autorización'),
+        ('bajo_stock', 'Bajo stock'),
+        ('vencimiento', 'Por vencer'),
         ('otro', 'Otro'),
     ]
     PRIORIDADES = [
@@ -195,22 +139,45 @@ class Alerta(models.Model):
         ('baja', 'Baja'),
     ]
 
-    tipo = models.CharField(max_length=20, choices=TIPOS, default='otro')
-    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='alertas', null=True, blank=True)
-    titulo = models.CharField(max_length=200, blank=True, default='')
-    mensaje = models.TextField(blank=True, default='')
-    descripcion = models.TextField(blank=True, default='')
-    remitente = models.CharField(max_length=150, blank=True, default='Sistema')
-    prioridad = models.CharField(max_length=10, choices=PRIORIDADES, default='media')
+    tipo = models.CharField(max_length=50, choices=TIPOS, default='otro')
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, null=True, blank=True)
+    titulo = models.CharField(max_length=200)
+    mensaje = models.TextField()
+    descripcion = models.TextField(blank=True)
+    remitente = models.CharField(max_length=100, blank=True)
+    prioridad = models.CharField(max_length=20, choices=PRIORIDADES, default='media')
     resuelta = models.BooleanField(default=False)
     fecha = models.DateTimeField(auto_now_add=True)
 
     @property
     def estado(self):
-        return 'resuelta' if self.resuelta else 'nueva'
-
-    class Meta:
-        ordering = ['-fecha']
+        return 'resuelta' if self.resuelta else 'activa'
 
     def __str__(self):
-        return f"{self.tipo} - {(self.titulo or self.mensaje)[:50]}"
+        return self.titulo
+
+
+# 👤 Perfil extendido del usuario
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    institution = models.CharField(max_length=200, blank=True, default='')
+    department = models.CharField(max_length=200, blank=True, default='')
+    phone = models.CharField(max_length=50, blank=True, default='')
+    cargo = models.CharField(max_length=100, blank=True, default='')
+    bio = models.TextField(blank=True, default='')
+    avatar = models.TextField(blank=True, default='')
+
+    def __str__(self):
+        return f"Perfil de {self.user.username}"
+
+
+# 🔍 Auditoría de acciones
+class Auditoria(models.Model):
+    usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    accion = models.CharField(max_length=100, default='')
+    modulo = models.CharField(max_length=100, default='')
+    descripcion = models.TextField(blank=True, default='')
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.usuario} - {self.accion} - {self.modulo}"

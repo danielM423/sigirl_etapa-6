@@ -13,6 +13,50 @@ export const colors = {
   text: "#ffffff",
 };
 
+// Tema de la aplicación SIGIRL
+export const theme = {
+  // Tema Laboratorio (principal)
+  laboratory: {
+    colors: {
+      primary: '#22c55e',
+      primaryDark: '#16a34a',
+      primaryGlow: 'rgba(34, 197, 94, 0.15)',
+      background: '#0a0e12',
+      surface: '#0d1217',
+      surfaceLight: '#11161d',
+      border: '#2a353d',
+      text: '#e2e8f0',
+      textDim: '#64748b',
+      textAccent: '#86efac',
+      danger: '#ef4444',
+      warning: '#f59e0b',
+      info: '#3b82f6',
+    },
+    fonts: {
+      mono: "'JetBrains Mono', 'Fira Code', monospace",
+      serif: "'Times New Roman', 'STIXGeneral', serif",
+    },
+  },
+  
+  // Tema Claro (alternativo)
+  light: {
+    colors: {
+      primary: '#22c55e',
+      primaryDark: '#16a34a',
+      background: '#f8fafc',
+      surface: '#ffffff',
+      border: '#e2e8f0',
+      text: '#0f172a',
+      textDim: '#64748b',
+      danger: '#ef4444',
+      warning: '#f59e0b',
+      info: '#3b82f6',
+    },
+  },
+};
+
+export default theme;
+
 // Estilos reutilizables
 export const styles = {
   // Layout

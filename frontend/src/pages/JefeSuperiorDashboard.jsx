@@ -1,799 +1,556 @@
-// Panel del jefe superior.
-// Centraliza aprobaciones, usuarios, estadísticas y alertas.
-import { useState, useEffect } from 'react';
-import { toast } from 'react-toastify';
+﻿// Panel del Jefe Superior - Estilo Laboratorio Oscuro + API Real
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Users, TrendingUp, AlertCircle, BarChart3, Search, ChevronDown, Eye, Download, Plus, Edit2, Trash2, CheckCircle2, XCircle } from 'lucide-react';
-import Layout from '../components/Layout';
-import ReportPanel from '../components/ReportPanel';
-import { exportToExcel, exportToPdf } from '../utils/reportExport';
+import { toast } from 'react-toastify';
 import {
-  getPedidos, createPedido, updatePedido, deletePedido,
-  getAlertas, createAlerta, updateAlerta,
-  getProductos, getUsuarios, createUsuario, updateUsuario, deleteUsuario,
-} from '../services/api';
+  Users, TrendingUp, BarChart3, Search, ChevronDown, Eye, Download,
+  Plus, Edit2, Trash2, CheckCircle2, XCircle, Package, AlertCircle,
+  FlaskConical, Shield, UserCheck, ClipboardList, ShieldCheck, RefreshCw,
+  Clock, Activity
+} from 'lucide-react';
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, PieChart, Pie, Cell
+} from 'recharts';
+import Layout from '../components/Layout';
+import RejectPedidoModal from '../components/RejectPedidoModal';
+import { getProductos, getPedidos, updatePedido, getUsuarios, updateUsuario, deleteUsuario, getAuditoria } from '../services/api';
+import { exportToExcel } from '../utils/reportExport';
 
-const pedidoVacio = {
-  codigo: '',
-  productoId: '',
-  cantidad: '',
-  solicitante: '',
-  estado: 'pendiente',
-  prioridad: 'media',
-  fecha_solicitud: '',
-  observaciones: '',
-  motivo_rechazo: ''
+// ─── Design helpers ──────────────────────────────────────────────
+const inputCls = 'w-full bg-stone-50 border border-[#E0E0E0] rounded-md px-3 py-2.5 text-sm font-mono text-stone-700 placeholder-stone-400 focus:outline-none focus:border-emerald-500 transition-colors';
+const selectCls = `${inputCls} appearance-none cursor-pointer pr-8`;
+
+const ESTADO_STYLES = {
+  aprobado:  'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25',
+  pendiente: 'bg-amber-100  text-amber-400  border border-amber-200',
+  rechazado: 'bg-rose-100   text-rose-400   border border-rose-200',
+  ok:        'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25',
+  bajo_stock:'bg-amber-100  text-amber-400  border border-amber-200',
+  agotado:   'bg-rose-100   text-rose-400   border border-rose-200',
 };
 
-const usuarioVacio = {
-  nombre: '',
-  email: '',
-  rol: 'usuario'
+const EstadoBadge = ({ estado }) => (
+  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${ESTADO_STYLES[estado] || 'bg-stone-100 text-stone-500 border border-stone-200'}`}>
+    <span className={`w-1.5 h-1.5 rounded-full ${estado==='aprobado'||estado==='ok'?'bg-emerald-400 animate-pulse':estado==='rechazado'||estado==='agotado'?'bg-rose-400':'bg-amber-400'}`} />
+    {estado}
+  </span>
+);
+
+const StatCard = ({ label, value, icon, color = 'emerald' }) => {
+  const colorMap = {
+    emerald: 'border-[#1FA971]/25 text-[#1FA971] bg-[#E8F5F0]',
+    amber:   'border-amber-200  text-amber-400  bg-amber-500/10',
+    rose:    'border-rose-200   text-rose-400   bg-rose-500/10',
+    blue:    'border-blue-200   text-blue-400   bg-blue-500/10',
+    purple:  'border-purple-500/30 text-purple-400 bg-purple-500/10',
+  };
+  const [border, textCol, bg] = colorMap[color].split(' ');
+  return (
+    <div className="bg-white border border-[#E0E0E0] rounded-lg p-4 hover:border-[#1FA971]/35 transition-colors">
+      <div className="flex items-start justify-between">
+        <div>
+          <span className="text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider">{label}</span>
+          <p className={`text-3xl font-bold font-mono mt-1 ${textCol}`}>{value}</p>
+        </div>
+        <div className={`p-2 rounded-md border ${border} ${bg}`}>{icon}</div>
+      </div>
+    </div>
+  );
 };
+
+const LabSection = ({ title, children, action, onAction }) => (
+  <div className="bg-white border border-[#E0E0E0] rounded-lg overflow-hidden">
+    <div className="flex items-center justify-between px-5 py-3 border-b border-[#E0E0E0]">
+      <span className="text-xs font-mono font-bold text-[#1FA971] uppercase tracking-wider">{title}</span>
+      {action && (
+        <button onClick={onAction} className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-mono font-bold text-[#1FA971] bg-[#E8F5F0] border border-[#1FA971]/25 hover:bg-[#E8F5F0] transition-colors">
+          {action}
+        </button>
+      )}
+    </div>
+    <div className="p-5">{children}</div>
+  </div>
+);
+
+const CustomTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-[#E0E0E0] rounded-md p-3 shadow-xl">
+      <p className="font-mono font-bold text-[#1FA971] mb-1 text-[10px]">{label}</p>
+      {payload.map((e, i) => (
+        <div key={i} className="flex items-center gap-2 text-[10px] font-mono">
+          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: e.color }} />
+          <span className="text-stone-500">{e.name}:</span>
+          <span className="font-bold text-[#1FA971]">{e.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const CHART_COLORS = ['#22c55e', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7'];
 
 const JefeSuperiorDashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [pedidos, setPedidos] = useState([]);
+
+  const [pedidos, setPedidos]   = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [productos, setProductos] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading]   = useState(true);
+
+  const [searchTerm, setSearchTerm]         = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
-  const [userRoleFilter, setUserRoleFilter] = useState('todos');
-  const [alertPriorityFilter, setAlertPriorityFilter] = useState('todas');
-  const [filterStatus, setFilterStatus] = useState('todos');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [alertas, setAlertas] = useState([]);
-  const activeTab = ['pedidos', 'usuarios', 'alertas'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'estadisticas';
-  const [showPedidoModal, setShowPedidoModal] = useState(false);
-  const [showUsuarioModal, setShowUsuarioModal] = useState(false);
-  const [selectedPedido, setSelectedPedido] = useState(null);
-  const [selectedUsuario, setSelectedUsuario] = useState(null);
-  const [formPedido, setFormPedido] = useState(pedidoVacio);
-  const [formUsuario, setFormUsuario] = useState(usuarioVacio);
+  const [filterStatus, setFilterStatus]     = useState('todos');
 
-  const getToday = () => new Date().toISOString().split('T')[0];
-  const formatDisplayDate = (value) => {
-    if (!value) return 'Sin fecha';
+  // ─── Selección masiva ─────────────────────────────────────
+  const [selectedPedidos, setSelectedPedidos] = useState(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
 
-    const normalizedValue = typeof value === 'string' && value.length <= 10
-      ? `${value}T00:00:00`
-      : value;
-    const parsed = new Date(normalizedValue);
+  // ─── Modal evaluación de seguridad ──────────────────────
+  const [evalModal, setEvalModal] = useState(null); // { pedido }
+  const [evalForm, setEvalForm] = useState({ nivel_riesgo: 'bajo', epp: '', observacion: '' });
 
-    if (Number.isNaN(parsed.getTime())) {
-      return value;
-    }
+  // ─── Bitácora ────────────────────────────────────────────
+  const [auditoria, setAuditoria] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditModulo, setAuditModulo] = useState('');
 
-    return new Intl.DateTimeFormat('es-CO', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }).format(parsed);
-  };
+  const initialTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    ['estadisticas','pedidos','usuarios','inventario','bitacora'].includes(initialTab) ? initialTab : 'estadisticas'
+  );
 
-  const changeTab = (tab) => {
-    setSearchParams({ tab });
-  };
+  const changeTab = (tab) => { setActiveTab(tab); setSearchParams({ tab }); };
 
-  const getNextPedidoCode = (listaPedidos) =>
-    `PED-2024-${String(Math.max(...listaPedidos.map(p => p.id), 0) + 1).padStart(3, '0')}`;
-
-  const syncUsuariosConPedidos = (listaUsuarios, listaPedidos) =>
-    listaUsuarios.map((usuario) => {
-      const pedidosUsuario = listaPedidos.filter(
-        (pedido) => pedido.usuario_username === usuario.username || pedido.solicitante === usuario.nombre
-      );
-      const rechazos = pedidosUsuario.filter((pedido) => pedido.estado === 'rechazado').length;
-      return { ...usuario, total_pedidos: pedidosUsuario.length, rechazos };
-    });
-
-  const normalizePedido = (p) => ({
-    ...p,
-    producto: p.producto_nombre || p.producto || '',
-    solicitante: p.solicitante || p.usuario_username || '',
-    codigo: p.codigo || `PED-${String(p.id).padStart(3, '0')}`,
-  });
-
+  // ─── Load real API data ────────────────────────────────────────
   useEffect(() => {
-    const hydrate = async () => {
-      setLoading(true);
+    const load = async () => {
       try {
-        const [pedidosRes, alertasRes, productosRes, usuariosRes] = await Promise.all([
-          getPedidos().catch(() => ({ data: [] })),
-          getAlertas().catch(() => ({ data: [] })),
-          getProductos().catch(() => ({ data: [] })),
+        const [pedRes, prodRes, usrRes] = await Promise.all([
+          getPedidos(),
+          getProductos(),
           getUsuarios().catch(() => ({ data: [] })),
         ]);
-        const pedidosNorm = (pedidosRes.data || []).map(normalizePedido);
-        const usuariosData = usuariosRes.data || [];
-        setPedidos(pedidosNorm);
-        setAlertas(alertasRes.data || []);
-        setProductos(productosRes.data || []);
-        setUsuarios(syncUsuariosConPedidos(usuariosData, pedidosNorm));
-      } catch {
-        toast.error('Error al cargar datos del panel de jefatura');
+        setPedidos((pedRes.data.results ?? pedRes.data).map(p => ({ ...p, producto: p.producto_nombre || p.producto })));
+        setProductos((prodRes.data.results ?? prodRes.data).map(p => ({ ...p, categoria: p.categoria_nombre || String(p.categoria || '') })));
+        const rawUsuarios = usrRes.data.results ?? usrRes.data;
+        setUsuarios(rawUsuarios);
+      } catch (err) {
+        toast.error('Error al cargar datos del servidor');
+        console.error(err);
       } finally {
         setLoading(false);
       }
     };
-
-    hydrate();
+    load();
   }, []);
 
-  const resetPedidoForm = () => {
-    setFormPedido({
-      ...pedidoVacio,
-      codigo: getNextPedidoCode(pedidos),
-      fecha_solicitud: getToday(),
-    });
-    setSelectedPedido(null);
+  // ─── Cargar bitácora cuando se activa ──────────────────────────
+  useEffect(() => {
+    if (activeTab !== 'bitacora') return;
+    setAuditLoading(true);
+    const params = {};
+    if (auditSearch) params.search = auditSearch;
+    if (auditModulo) params.modulo = auditModulo;
+    getAuditoria(params)
+      .then(res => setAuditoria(res.data.results ?? res.data))
+      .catch(() => toast.error('Error al cargar bitácora'))
+      .finally(() => setAuditLoading(false));
+  }, [activeTab, auditSearch, auditModulo]);
+
+  // ─── Pedido handlers ──────────────────────────────────────────
+  const [pedidoToReject, setPedidoToReject] = useState(null);
+
+  // Selección masiva
+  const allPendientesIds = useMemo(() => filteredPedidos?.filter(p=>p.estado==='pendiente').map(p=>p.id) ?? [], []);
+  const toggleSelect = (id) => setSelectedPedidos(prev => { const s = new Set(prev); s.has(id)?s.delete(id):s.add(id); return s; });
+  const toggleSelectAll = () => {
+    const pendIds = (filteredPedidos||[]).filter(p=>p.estado==='pendiente').map(p=>p.id);
+    setSelectedPedidos(prev => pendIds.every(id=>prev.has(id)) ? new Set() : new Set(pendIds));
   };
-
-  const resetUsuarioForm = () => {
-    setFormUsuario(usuarioVacio);
-    setSelectedUsuario(null);
-  };
-
-  const handleNuevoPedido = () => {
-    resetPedidoForm();
-    setShowPedidoModal(true);
-  };
-
-  const handleEditarPedido = (pedido) => {
-    setSelectedPedido(pedido);
-    setFormPedido({
-      codigo: pedido.codigo,
-      productoId: pedido.producto_id || pedido.producto || '',
-      cantidad: String(pedido.cantidad),
-      solicitante: pedido.solicitante,
-      estado: pedido.estado,
-      prioridad: pedido.prioridad || 'media',
-      fecha_solicitud: pedido.fecha_solicitud || '',
-      observaciones: pedido.observaciones || '',
-      motivo_rechazo: pedido.motivo_rechazo || ''
-    });
-    setShowPedidoModal(true);
-  };
-
-  const handleGuardarPedido = async () => {
-    if (!formPedido.productoId || !formPedido.cantidad) {
-      toast.error('Selecciona el producto y completa la cantidad');
-      return;
-    }
-
-    if (Number(formPedido.cantidad) <= 0) {
-      toast.error('La cantidad debe ser mayor que cero');
-      return;
-    }
-
-    if (formPedido.estado === 'rechazado' && !formPedido.motivo_rechazo.trim()) {
-      toast.error('Ingresa el motivo del rechazo');
-      return;
-    }
-
-    const payload = {
-      producto: Number(formPedido.productoId),
-      cantidad: Number(formPedido.cantidad),
-      estado: formPedido.estado,
-      prioridad: formPedido.prioridad,
-      fecha_solicitud: formPedido.fecha_solicitud || getToday(),
-      observaciones: formPedido.observaciones,
-      motivo_rechazo: formPedido.estado === 'rechazado' ? formPedido.motivo_rechazo : '',
-      solicitante: formPedido.solicitante,
-    };
-
+  const handleBulkAction = async (estado) => {
+    if (!selectedPedidos.size) { toast.error('Selecciona al menos un pedido'); return; }
+    setBulkLoading(true);
     try {
-      if (selectedPedido) {
-        const res = await updatePedido(selectedPedido.id, payload);
-        setPedidos((prev) => prev.map((p) => p.id === selectedPedido.id ? normalizePedido(res.data) : p));
-        toast.success('Pedido actualizado');
-      } else {
-        const res = await createPedido(payload);
-        setPedidos((prev) => [normalizePedido(res.data), ...prev]);
-        toast.success('Pedido creado');
-      }
-      setShowPedidoModal(false);
-      resetPedidoForm();
+      const updates = await Promise.all([...selectedPedidos].map(id => updatePedido(id, { estado })));
+      setPedidos(prev => prev.map(p => {
+        const upd = updates.find(r => r.data.id === p.id);
+        return upd ? { ...p, ...upd.data, producto: upd.data.producto_nombre || upd.data.producto } : p;
+      }));
+      setSelectedPedidos(new Set());
+      toast.success(`${updates.length} pedido(s) ${estado === 'aprobado' ? 'aprobados' : 'rechazados'}`);
+    } catch { toast.error('Error en acción masiva'); }
+    finally { setBulkLoading(false); }
+  };
+
+  // Evaluación de seguridad
+  const openEvalModal = (pedido) => {
+    const existing = pedido.evaluacion_seguridad || {};
+    setEvalForm({ nivel_riesgo: existing.nivel_riesgo||'bajo', epp: existing.epp||'', observacion: existing.observacion||'' });
+    setEvalModal({ pedido });
+  };
+  const handleGuardarEval = async () => {
+    if (!evalModal) return;
+    try {
+      const { data } = await updatePedido(evalModal.pedido.id, { evaluacion_seguridad: evalForm });
+      setPedidos(prev => prev.map(p => p.id === evalModal.pedido.id ? { ...p, evaluacion_seguridad: data.evaluacion_seguridad } : p));
+      toast.success('Evaluación guardada');
+      setEvalModal(null);
+    } catch { toast.error('Error al guardar evaluación'); }
+  };
+
+  const handleCambiarEstadoPedido = async (pedido, estado) => {
+    const motivoRechazo = estado === 'rechazado' ? String(pedidoToReject?.motivo || '').trim() : '';
+    if (estado === 'rechazado' && !motivoRechazo) { toast.error('Debes indicar un motivo'); return; }
+    try {
+      const { data } = await updatePedido(pedido.id, {
+        estado,
+        ...(estado === 'rechazado' ? { motivo_rechazo: motivoRechazo } : {}),
+      });
+      setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, ...data, producto: data.producto_nombre || data.producto } : p));
+      if (estado === 'rechazado') setPedidoToReject(null);
+      toast.success(estado === 'aprobado' ? 'Pedido aprobado' : 'Pedido rechazado');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Error al guardar pedido');
-    }
-  };
-
-  const handleEliminarPedido = async (id) => {
-    const pedido = pedidos.find((item) => item.id === id);
-    if (!pedido) return;
-
-    const confirmar = window.confirm(`¿Eliminar el pedido ${pedido.codigo}?`);
-    if (!confirmar) return;
-
-    try {
-      await deletePedido(id);
-      setPedidos((prev) => prev.filter((item) => item.id !== id));
-      toast.success('Pedido eliminado');
-    } catch {
-      toast.error('Error al eliminar el pedido');
+      toast.error(err.response?.data?.error || 'Error al actualizar pedido');
     }
   };
 
   const handleVerPedido = (pedido) => {
-    const detalle = [
-      `Código: ${pedido.codigo}`,
-      `Solicitante: ${pedido.solicitante}`,
-      `Producto: ${pedido.producto}`,
-      `Cantidad: ${pedido.cantidad}`,
-      `Departamento: ${pedido.departamento}`,
-      `Estado: ${pedido.estado}`,
-      `Prioridad: ${pedido.prioridad}`,
-      `Fecha solicitud: ${formatDisplayDate(pedido.fecha_solicitud)}`,
-      pedido.evaluacion_seguridad?.reactivoCritico ? `Puntaje seguridad: ${pedido.evaluacion_seguridad.puntaje}/${pedido.evaluacion_seguridad.puntajeMinimo}` : null,
+    const lines = [
+      `Código: ${pedido.codigo}`, `Solicitante: ${pedido.solicitante}`,
+      `Producto: ${pedido.producto}`, `Cantidad: ${pedido.cantidad}`,
+      `Estado: ${pedido.estado}`, `Prioridad: ${pedido.prioridad}`,
       pedido.observaciones ? `Observaciones: ${pedido.observaciones}` : null,
       pedido.motivo_rechazo ? `Motivo rechazo: ${pedido.motivo_rechazo}` : null,
     ].filter(Boolean);
-
-    toast.info(
-      <div className="text-sm">
-        <p className="font-semibold mb-2">Detalle del pedido</p>
-        <div className="space-y-1">{detalle.map((line, index) => <p key={index}>{line}</p>)}</div>
-      </div>,
-      { autoClose: 8000, closeOnClick: false }
-    );
+    toast.info(<div className="text-sm font-mono"><p className="font-bold mb-2 text-[#1FA971]">DETALLE PEDIDO</p><div className="space-y-1">{lines.map((l,i)=><p key={i} className="text-stone-600">{l}</p>)}</div></div>, { autoClose: 8000 });
   };
 
-  const handleCambiarEstadoPedido = async (pedido, estado) => {
-    let motivoRechazo = pedido.motivo_rechazo || '';
-
-    if (estado === 'rechazado') {
-      const motivo = window.prompt('Motivo del rechazo:', motivoRechazo);
-      if (motivo === null) return;
-      if (!motivo.trim()) {
-        toast.error('Debes indicar un motivo de rechazo');
-        return;
-      }
-      motivoRechazo = motivo;
-    }
-
-    try {
-      const payload = { estado, motivo_rechazo: estado === 'rechazado' ? motivoRechazo : '' };
-      const res = await updatePedido(pedido.id, payload);
-      setPedidos((prev) => prev.map((p) => p.id === pedido.id ? normalizePedido(res.data) : p));
-
-      if (estado === 'aprobado' && pedido.evaluacion_seguridad?.reactivoCritico) {
-        await createAlerta({
-          tipo: 'autorizacion',
-          titulo: `Reactivo autorizado por jefe: ${pedido.producto}`,
-          descripcion: `El jefe superior autorizó la solicitud de ${pedido.solicitante}.`,
-          remitente: 'Jefe Superior',
-          prioridad: 'media',
-          mensaje: `Pedido ${pedido.codigo} aprobado.`,
-        }).catch(() => {});
-      }
-
-      toast.success(estado === 'aprobado' ? 'Pedido aprobado' : 'Pedido rechazado');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Error al cambiar estado');
-    }
+  const handleExportarPedidos = () => {
+    exportToExcel(filteredPedidos.map(p=>({ codigo:p.codigo, solicitante:p.solicitante, producto:p.producto, cantidad:p.cantidad, estado:p.estado, prioridad:p.prioridad, fecha:p.fecha_solicitud })), 'pedidos-jefe.xlsx');
+    toast.success('Pedidos exportados');
   };
 
-  const handleExportarPedidosExcel = () => {
-    exportToExcel(filteredPedidos, 'pedidos-jefatura.xlsx');
-    toast.success('Reporte exportado en Excel');
-  };
+  // ─── Usuario handlers ─────────────────────────────────────────
+  const [showUsuarioModal, setShowUsuarioModal] = useState(false);
+  const [selectedUsuario, setSelectedUsuario]   = useState(null);
+  const [formUsuario, setFormUsuario] = useState({ nombre: '', email: '', departamento: '', rol: 'usuario' });
 
-  const handleExportarPedidosPdf = () => {
-    exportToPdf({
-      title: 'Reporte de Pedidos - Jefatura SIGIRL',
-      headers: ['Código', 'Solicitante', 'Producto', 'Cantidad', 'Estado'],
-      rows: filteredPedidos.map((pedido) => [pedido.codigo, pedido.solicitante, pedido.producto, pedido.cantidad, pedido.estado]),
-      fileName: 'pedidos-jefatura.pdf',
-    });
-    toast.success('Reporte exportado en PDF');
-  };
+  const resetUsuarioForm = () => { setFormUsuario({ nombre:'', email:'', departamento:'', rol:'usuario' }); setSelectedUsuario(null); };
 
-  const handleExportarUsuariosExcel = () => {
-    exportToExcel(
-      filteredUsuarios.map((usuario) => ({
-        nombre: usuario.nombre,
-        email: usuario.email,
-        rol: usuario.rol || 'usuario',
-        total_pedidos: usuario.total_pedidos || 0,
-        rechazos: usuario.rechazos || 0,
-        recomendacion: (usuario.rechazos || 0) > 2 ? 'Revisión y acompañamiento' : 'Seguimiento normal',
-      })),
-      'usuarios-jefatura.xlsx'
-    );
-    toast.success('Listado de usuarios exportado');
-  };
-
-  const handleExportarAlertasExcel = () => {
-    exportToExcel(
-      filteredAlertas.map((alerta) => ({
-        alerta: alerta.titulo,
-        remitente: alerta.remitente,
-        prioridad: alerta.prioridad,
-        estado: alerta.estado,
-        descripcion: alerta.descripcion,
-      })),
-      'alertas-jefatura.xlsx'
-    );
-    toast.success('Alertas exportadas');
-  };
-
-  const handleNuevoUsuario = () => {
-    resetUsuarioForm();
-    setShowUsuarioModal(true);
-  };
-
-  const handleEditarUsuario = (usuario) => {
-    setSelectedUsuario(usuario);
-    setFormUsuario({
-      nombre: usuario.nombre,
-      email: usuario.email,
-      rol: usuario.rol || 'usuario'
-    });
+  const handleEditarUsuario = (u) => {
+    setSelectedUsuario(u);
+    setFormUsuario({ nombre: u.username || u.nombre || '', email: u.email || '', departamento: u.department || u.departamento || '', rol: u.rol || 'usuario' });
     setShowUsuarioModal(true);
   };
 
   const handleGuardarUsuario = async () => {
-    if (!formUsuario.nombre.trim() || !formUsuario.email.trim()) {
-      toast.error('Completa todos los campos del usuario');
-      return;
-    }
-
-    if (!formUsuario.email.includes('@')) {
-      toast.error('Ingresa un correo válido');
-      return;
-    }
-
-    const emailDuplicado = usuarios.some((usuario) =>
-      usuario.email?.toLowerCase() === formUsuario.email.trim().toLowerCase() && usuario.id !== selectedUsuario?.id
-    );
-
-    if (emailDuplicado) {
-      toast.error('Ese correo ya está registrado');
-      return;
-    }
-
-    const payload = {
-      nombre_input: formUsuario.nombre.trim(),
-      email: formUsuario.email.trim(),
-      rol_input: formUsuario.rol
-    };
-
+    if (!formUsuario.nombre.trim() || !formUsuario.email.trim()) { toast.error('Completa nombre y email'); return; }
+    if (!formUsuario.email.includes('@')) { toast.error('Email inválido'); return; }
     try {
       if (selectedUsuario) {
-        const res = await updateUsuario(selectedUsuario.id, payload);
-        setUsuarios((prev) => prev.map((u) => u.id === selectedUsuario.id ? { ...u, ...res.data } : u));
+        const { data } = await updateUsuario(selectedUsuario.id, { username: formUsuario.nombre, email: formUsuario.email, nombre_input: formUsuario.nombre, departamento_input: formUsuario.departamento, rol_input: formUsuario.rol });
+        setUsuarios(prev => prev.map(u => u.id === selectedUsuario.id ? { ...u, ...data } : u));
         toast.success('Usuario actualizado');
-      } else {
-        const res = await createUsuario(payload);
-        setUsuarios((prev) => [res.data, ...prev]);
-        toast.success('Usuario creado');
       }
-      setShowUsuarioModal(false);
-      resetUsuarioForm();
+      setShowUsuarioModal(false); resetUsuarioForm();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Error al guardar usuario');
     }
   };
 
   const handleEliminarUsuario = async (id) => {
-    const usuario = usuarios.find((item) => item.id === id);
-    if (!usuario) return;
-
-    const confirmar = window.confirm(`¿Eliminar a ${usuario.nombre}?`);
-    if (!confirmar) return;
-
+    const u = usuarios.find(x => x.id === id);
+    if (!u || !window.confirm(`¿Eliminar a ${u.username || u.nombre}?`)) return;
     try {
       await deleteUsuario(id);
-      setUsuarios((prev) => prev.filter((item) => item.id !== id));
+      setUsuarios(prev => prev.filter(x => x.id !== id));
       toast.success('Usuario eliminado');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Error al eliminar el usuario');
-    }
+    } catch { toast.error('Error al eliminar usuario'); }
   };
 
-  const handleVerUsuario = (usuario) => {
-    const detalle = [
-      `Nombre: ${usuario.nombre}`,
-      `Correo: ${usuario.email}`,
-      `Rol: ${usuario.rol || 'usuario'}`,
-      `Total pedidos: ${usuario.total_pedidos || 0}`,
-      `Rechazos: ${usuario.rechazos || 0}`,
-    ];
-
-    toast.info(
-      <div className="text-sm">
-        <p className="font-semibold mb-2">Detalle del usuario</p>
-        <div className="space-y-1">{detalle.map((line, index) => <p key={index}>{line}</p>)}</div>
-      </div>,
-      { autoClose: 8000, closeOnClick: false }
-    );
+  const handleVerUsuario = (u) => {
+    const lines = [`Usuario: ${u.username||u.nombre}`, `Email: ${u.email}`, `Departamento: ${u.department||u.departamento||'—'}`, `Rol: ${u.rol||'usuario'}`];
+    toast.info(<div className="text-sm font-mono"><p className="font-bold mb-2 text-[#1FA971]">DETALLE USUARIO</p><div className="space-y-1">{lines.map((l,i)=><p key={i} className="text-stone-600">{l}</p>)}</div></div>, { autoClose: 6000 });
   };
 
-  const getEstadoBadge = (estado) => {
-    const styles = {
-      aprobado: 'bg-emerald-100 text-emerald-700 border border-emerald-300',
-      rechazado: 'bg-rose-100 text-rose-700 border border-rose-300',
-      pendiente: 'bg-blue-100 text-blue-700 border border-blue-300'
-    };
-
-    const icons = {
-      aprobado: '✅',
-      rechazado: '❌',
-      pendiente: '⏳'
-    };
-
-    const labels = {
-      aprobado: 'Aprobado',
-      rechazado: 'Rechazado',
-      pendiente: 'Pendiente'
-    };
-
-    return (
-      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${styles[estado]}`}>
-        {icons[estado]}
-        {labels[estado]}
-      </span>
-    );
-  };
-
-  const stats = {
+  // ─── Computed stats ────────────────────────────────────────────
+  const stats = useMemo(() => ({
     totalPedidos: pedidos.length,
-    aprobados: pedidos.filter((p) => p.estado === 'aprobado').length,
-    rechazados: pedidos.filter((p) => p.estado === 'rechazado').length,
-    pendientes: pedidos.filter((p) => p.estado === 'pendiente').length,
+    aprobados: pedidos.filter(p=>p.estado==='aprobado').length,
+    rechazados: pedidos.filter(p=>p.estado==='rechazado').length,
+    pendientes: pedidos.filter(p=>p.estado==='pendiente').length,
     totalUsuarios: usuarios.length,
-    usuariosConRechazos: usuarios.filter((u) => (u.rechazos || 0) > 0).length,
-    tasaAprobacion: pedidos.length ? ((pedidos.filter((p) => p.estado === 'aprobado').length / pedidos.length) * 100).toFixed(1) : '0.0',
-    tasaRechazo: pedidos.length ? ((pedidos.filter((p) => p.estado === 'rechazado').length / pedidos.length) * 100).toFixed(1) : '0.0'
-  };
+    tasaAprobacion: pedidos.length ? ((pedidos.filter(p=>p.estado==='aprobado').length/pedidos.length)*100).toFixed(1) : '0.0',
+  }), [pedidos, usuarios]);
 
-  const filteredPedidos = pedidos.filter((pedido) => {
-    const text = searchTerm.toLowerCase();
-    const matchesSearch =
-      pedido.producto.toLowerCase().includes(text) ||
-      pedido.codigo.toLowerCase().includes(text) ||
-      pedido.solicitante.toLowerCase().includes(text);
-    const matchesFilter = filterStatus === 'todos' || pedido.estado === filterStatus;
-    const matchesFrom = !dateFrom || (pedido.fecha_solicitud || '') >= dateFrom;
-    const matchesTo = !dateTo || (pedido.fecha_solicitud || '') <= dateTo;
-    return matchesSearch && matchesFilter && matchesFrom && matchesTo;
-  });
+  const barData = useMemo(() => [
+    { name: 'Aprobados',  value: stats.aprobados,  fill: '#22c55e' },
+    { name: 'Pendientes', value: stats.pendientes, fill: '#f59e0b' },
+    { name: 'Rechazados', value: stats.rechazados, fill: '#ef4444' },
+  ], [stats]);
 
-  const filteredUsuarios = usuarios.filter((usuario) => {
-    const text = userSearchTerm.toLowerCase();
-    const matchesSearch =
-      usuario.nombre.toLowerCase().includes(text) ||
-      usuario.email.toLowerCase().includes(text);
-    const matchesRole = userRoleFilter === 'todos' || (usuario.rol || 'usuario') === userRoleFilter;
-    return matchesSearch && matchesRole;
-  });
+  const donutData = useMemo(() => barData.filter(d=>d.value>0), [barData]);
 
-  const filteredAlertas = alertas.filter((alerta) => alertPriorityFilter === 'todas' || alerta.prioridad === alertPriorityFilter);
+  const stockChartData = useMemo(() =>
+    productos.slice(0,8).map(p=>({ name: p.nombre.length>12?p.nombre.slice(0,12)+'…':p.nombre, stock: Number(p.cantidad||0), minimo: Number(p.umbral_minimo||0) })),
+    [productos]
+  );
 
-  const statsAlertas = {
-    total: alertas.length,
-    nuevas: alertas.filter((alerta) => alerta.estado === 'nueva').length,
-    altas: alertas.filter((alerta) => alerta.prioridad === 'alta').length,
-  };
+  const filteredPedidos = useMemo(() => pedidos.filter(p => {
+    const t = searchTerm.toLowerCase();
+    return (p.producto.toLowerCase().includes(t) || p.codigo?.toLowerCase().includes(t) || p.solicitante?.toLowerCase().includes(t))
+      && (filterStatus === 'todos' || p.estado === filterStatus);
+  }), [pedidos, searchTerm, filterStatus]);
 
-  const reportPrimaryData = [
-    { name: 'Aprobados', value: stats.aprobados },
-    { name: 'Pendientes', value: stats.pendientes },
-    { name: 'Rechazados', value: stats.rechazados },
+  const filteredUsuarios = useMemo(() => usuarios.filter(u => {
+    const t = userSearchTerm.toLowerCase();
+    return (u.username||u.nombre||'').toLowerCase().includes(t) || (u.email||'').toLowerCase().includes(t) || (u.department||u.departamento||'').toLowerCase().includes(t);
+  }), [usuarios, userSearchTerm]);
+
+  const TABS = [
+    { key:'estadisticas', label:'ESTADÍSTICAS', icon:<BarChart3 className="w-3.5 h-3.5" /> },
+    { key:'pedidos',      label:'PEDIDOS',      icon:<FlaskConical className="w-3.5 h-3.5" /> },
+    { key:'usuarios',     label:'USUARIOS',     icon:<Users className="w-3.5 h-3.5" /> },
+    { key:'inventario',   label:'INVENTARIO',   icon:<Package className="w-3.5 h-3.5" /> },
+    { key:'bitacora',     label:'BITÁCORA',     icon:<ClipboardList className="w-3.5 h-3.5" /> },
   ];
 
-  const reportSecondaryData = Object.entries(
-    pedidos.reduce((acc, pedido) => {
-      acc[pedido.producto] = (acc[pedido.producto] || 0) + Number(pedido.cantidad || 0);
-      return acc;
-    }, {})
-  )
-    .slice(0, 5)
-    .map(([name, value]) => ({ name, value }));
-
-  const activityItems = [
-    ...filteredPedidos.slice(0, 5).map((pedido) => ({
-      id: `pedido-${pedido.id}`,
-      title: `${pedido.codigo} · ${pedido.estado}`,
-      detail: `${pedido.solicitante} · ${pedido.producto}`,
-      date: formatDisplayDate(pedido.fecha_respuesta || pedido.fecha_solicitud),
-    })),
-    ...alertas.slice(0, 3).map((alerta) => ({
-      id: `alerta-${alerta.id}`,
-      title: alerta.titulo,
-      detail: alerta.descripcion,
-      date: alerta.fecha,
-    })),
-  ].slice(0, 8);
-
-  const handleResolverAlerta = async (id) => {
-    try {
-      const res = await updateAlerta(id, { resuelta: true });
-      setAlertas((prev) => prev.map((a) => a.id === id ? res.data : a));
-      toast.success('Alerta actualizada');
-    } catch {
-      toast.error('Error al resolver la alerta');
-    }
-  };
+  if (loading) return (
+    <Layout>
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_6px_#1FA971] animate-pulse mx-auto mb-3" />
+          <p className="text-stone-500 font-mono text-sm">CARGANDO DATOS...</p>
+        </div>
+      </div>
+    </Layout>
+  );
 
   return (
     <Layout>
-      <div>
-        <div className="mb-10 rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_12px_35px_rgba(34,197,94,0.10)] backdrop-blur-xl md:p-6">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h1 className="text-[34px] font-bold text-slate-800">Dashboard ejecutivo PRO</h1>
-              <p className="text-slate-500 text-base">Supervisa pedidos, usuarios, alertas y métricas generales del laboratorio con una vista directiva moderna.</p>
+      <div className="space-y-5">
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                  {stats.totalPedidos} pedidos
-                </span>
-                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
-                  {stats.totalUsuarios} usuarios
-                </span>
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
-                  {stats.pendientes} pendientes
-                </span>
+        {/* Header */}
+        <div className="bg-white border border-[#E0E0E0] rounded-lg p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Shield className="h-4 w-4 text-[#1FA971]" />
+                <span className="text-[10px] font-mono font-bold text-[#1FA971] uppercase tracking-wider">PANEL JEFE SUPERIOR</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#22c55e] animate-pulse" />
+              </div>
+              <h1 className="text-xl font-bold font-mono text-stone-700">Dashboard Ejecutivo</h1>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25">{stats.totalPedidos} pedidos</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-200">{stats.totalUsuarios} usuarios</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400 border border-amber-200">{stats.pendientes} pendientes</span>
               </div>
             </div>
 
-            <div className="flex flex-wrap justify-center gap-3 rounded-[24px] border border-emerald-100 bg-[#f8fff7] p-2.5">
-              <button
-                onClick={() => changeTab('estadisticas')}
-                className={`px-6 py-3 rounded-2xl font-semibold transition-all ${
-                  activeTab === 'estadisticas'
-                    ? 'bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white shadow-md shadow-emerald-500/20'
-                    : 'bg-white border border-emerald-100 text-slate-700 hover:bg-emerald-50 shadow-sm'
-                }`}
-              >
-                Estadísticas
-              </button>
-              <button
-                onClick={() => changeTab('pedidos')}
-                className={`px-6 py-3 rounded-2xl font-semibold transition-all ${
-                  activeTab === 'pedidos'
-                    ? 'bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white shadow-md shadow-emerald-500/20'
-                    : 'bg-white border border-emerald-100 text-slate-700 hover:bg-emerald-50 shadow-sm'
-                }`}
-              >
-                Pedidos
-              </button>
-              <button
-                onClick={() => changeTab('usuarios')}
-                className={`px-6 py-3 rounded-2xl font-semibold transition-all ${
-                  activeTab === 'usuarios'
-                    ? 'bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white shadow-md shadow-emerald-500/20'
-                    : 'bg-white border border-emerald-100 text-slate-700 hover:bg-emerald-50 shadow-sm'
-                }`}
-              >
-                Usuarios
-              </button>
-              <button
-                onClick={() => changeTab('alertas')}
-                className={`px-6 py-3 rounded-2xl font-semibold transition-all ${
-                  activeTab === 'alertas'
-                    ? 'bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white shadow-md shadow-emerald-500/20'
-                    : 'bg-white border border-emerald-100 text-slate-700 hover:bg-emerald-50 shadow-sm'
-                }`}
-              >
-                Alertas
-              </button>
+            <div className="flex flex-wrap gap-2">
+              {TABS.map(t => (
+                <button key={t.key} onClick={()=>changeTab(t.key)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded text-xs font-mono font-bold transition-all ${
+                    activeTab===t.key
+                      ? 'bg-emerald-500/15 border border-emerald-500/50 text-[#1FA971] shadow-[0_0_10px_rgba(34,197,94,0.1)]'
+                      : 'bg-stone-50 border border-[#E0E0E0] text-stone-500 hover:text-stone-600 hover:border-slate-500'
+                  }`}>
+                  {t.icon}{t.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* ESTADÍSTICAS TAB */}
+        {/* ── ESTADÍSTICAS ─────────────────────────────────────── */}
         {activeTab === 'estadisticas' && (
-          <div>
-            <ReportPanel
-              title="Reportes de jefatura y trazabilidad"
-              subtitle="Visualiza pedidos, consumo aproximado por producto y actividad reciente."
-              primaryData={reportPrimaryData}
-              secondaryData={reportSecondaryData}
-              activity={activityItems}
-              onExportExcel={handleExportarPedidosExcel}
-              onExportPdf={handleExportarPedidosPdf}
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
-              <div className="rounded-[20px] bg-gradient-to-r from-blue-500 to-blue-600 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Total Pedidos</p>
-                    <p className="text-4xl font-bold mt-2">{stats.totalPedidos}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <BarChart3 className="w-6 h-6 text-white" />
-                  </div>
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard label="Total Pedidos"    value={stats.totalPedidos}   icon={<FlaskConical className="w-4 h-4" />} color="blue" />
+              <StatCard label="Aprobados"        value={stats.aprobados}      icon={<CheckCircle2 className="w-4 h-4" />} color="emerald" />
+              <StatCard label="Rechazados"       value={stats.rechazados}     icon={<XCircle className="w-4 h-4" />} color="rose" />
+              <StatCard label="Tasa Aprobación"  value={`${stats.tasaAprobacion}%`} icon={<TrendingUp className="w-4 h-4" />} color="purple" />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Bar chart pedidos por estado */}
+              <div className="bg-white border border-[#E0E0E0] rounded-lg overflow-hidden">
+                <div className="px-5 py-3 border-b border-[#E0E0E0]">
+                  <span className="text-xs font-mono font-bold text-[#1FA971] uppercase tracking-wider">PEDIDOS POR ESTADO</span>
+                </div>
+                <div className="p-5 h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={barData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E0E0E0" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fill:'#64748b', fontSize:10, fontFamily:'monospace' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill:'#64748b', fontSize:10, fontFamily:'monospace' }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip />} cursor={{ fill:'#F0F4F2' }} />
+                      {barData.map((d,i) => <Bar key={d.name} dataKey="value" data={[d]} fill={d.fill} radius={[4,4,0,0]} maxBarSize={50} />)}
+                      <Bar dataKey="value" fill="#22c55e" radius={[4,4,0,0]} maxBarSize={50} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
-              <div className="rounded-[20px] bg-gradient-to-r from-red-500 to-rose-500 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Rechazados</p>
-                    <p className="text-4xl font-bold mt-2">{stats.rechazados}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <AlertCircle className="w-6 h-6 text-white" />
-                  </div>
+
+              {/* Donut chart tasa aprobación */}
+              <div className="bg-white border border-[#E0E0E0] rounded-lg overflow-hidden">
+                <div className="px-5 py-3 border-b border-[#E0E0E0]">
+                  <span className="text-xs font-mono font-bold text-[#1FA971] uppercase tracking-wider">DISTRIBUCIÓN DE ESTADOS</span>
                 </div>
-              </div>
-              <div className="rounded-[20px] bg-gradient-to-r from-amber-400 to-orange-500 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Pendientes</p>
-                    <p className="text-4xl font-bold mt-2">{stats.pendientes}</p>
+                <div className="p-5 flex items-center justify-center gap-6 h-64">
+                  <div className="relative w-44 h-44">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={75} paddingAngle={3} stroke="none">
+                          {donutData.map((d,i) => <Cell key={i} fill={d.fill} />)}
+                        </Pie>
+                        <Tooltip content={<CustomTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold font-mono text-[#1FA971]">{stats.tasaAprobacion}%</p>
+                        <p className="text-[8px] text-stone-500 font-mono uppercase">Aprobación</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <TrendingUp className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-[20px] bg-gradient-to-r from-lime-500 to-green-600 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Aprobación</p>
-                    <p className="text-4xl font-bold mt-2">{stats.tasaAprobacion}%</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <BarChart3 className="w-6 h-6 text-white" />
+                  <div className="space-y-2">
+                    {barData.map(d => (
+                      <div key={d.name} className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.fill }} />
+                        <span className="text-[10px] font-mono text-stone-500">{d.name}:</span>
+                        <span className="text-[10px] font-mono font-bold text-stone-600">{d.value}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-10">
-              <div className="rounded-[20px] bg-white border border-emerald-100 p-5 shadow-[0_10px_30px_rgba(34,197,94,0.08)]">
-                <p className="text-sm font-semibold text-slate-500">Usuarios registrados</p>
-                <p className="text-3xl font-bold text-slate-800 mt-2">{stats.totalUsuarios}</p>
+            {/* Stock vs umbral */}
+            <div className="bg-white border border-[#E0E0E0] rounded-lg overflow-hidden">
+              <div className="px-5 py-3 border-b border-[#E0E0E0]">
+                <span className="text-xs font-mono font-bold text-[#1FA971] uppercase tracking-wider">STOCK vs UMBRAL MÍNIMO</span>
               </div>
-              <div className="rounded-[20px] bg-white border border-emerald-100 p-5 shadow-[0_10px_30px_rgba(34,197,94,0.08)]">
-                <p className="text-sm font-semibold text-slate-500">Usuarios con rechazos</p>
-                <p className="text-3xl font-bold text-slate-800 mt-2">{stats.usuariosConRechazos}</p>
-              </div>
-              <div className="rounded-[20px] bg-white border border-emerald-100 p-5 shadow-[0_10px_30px_rgba(34,197,94,0.08)]">
-                <p className="text-sm font-semibold text-slate-500">Tasa de rechazo</p>
-                <p className="text-3xl font-bold text-slate-800 mt-2">{stats.tasaRechazo}%</p>
+              <div className="p-5 h-64">
+                {stockChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={stockChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E0E0E0" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fill:'#64748b', fontSize:9, fontFamily:'monospace' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill:'#64748b', fontSize:9, fontFamily:'monospace' }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip />} cursor={{ fill:'#F0F4F2' }} />
+                      <Bar dataKey="stock"  name="Stock actual" fill="#22c55e" radius={[4,4,0,0]} maxBarSize={30} />
+                      <Bar dataKey="minimo" name="Umbral mínimo" fill="#f59e0b" radius={[4,4,0,0]} maxBarSize={30} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-stone-400 font-mono text-sm">Sin datos de inventario</div>
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* PEDIDOS TAB */}
+        {/* ── PEDIDOS ──────────────────────────────────────────── */}
         {activeTab === 'pedidos' && (
-          <div>
-            <div className="bg-white rounded-[24px] border border-emerald-100 shadow-[0_10px_30px_rgba(34,197,94,0.08)] p-5 md:p-6 mb-8">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
-                <div className="flex-1 max-w-sm">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Buscar pedido o solicitante..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-[#f8fff7] border border-emerald-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 text-sm transition-all"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <div className="relative w-full sm:w-48">
-                    <select
-                      value={filterStatus}
-                      onChange={(e) => setFilterStatus(e.target.value)}
-                      className="appearance-none bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-emerald-300 cursor-pointer text-sm w-full transition-all"
-                    >
-                      <option value="todos">Todos los estados</option>
-                      <option value="aprobado">Aprobado</option>
-                      <option value="rechazado">Rechazado</option>
-                      <option value="pendiente">Pendiente</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  </div>
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    className="bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 text-sm"
-                  />
-                  <input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 text-sm"
-                  />
-                  <button
-                    onClick={handleExportarPedidosExcel}
-                    className="px-5 py-3 bg-white border border-emerald-100 text-slate-700 rounded-xl transition-all font-semibold shadow-sm text-sm whitespace-nowrap hover:bg-emerald-50"
-                  >
-                    <Download className="w-4 h-4 inline mr-2" />
-                    Exportar
-                  </button>
-                  <button
-                    onClick={handleNuevoPedido}
-                    className="px-5 py-3 bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white rounded-xl transition-all font-semibold shadow-md shadow-emerald-500/20 text-sm whitespace-nowrap"
-                  >
-                    <Plus className="w-4 h-4 inline mr-2" />
-                    Nuevo pedido
-                  </button>
-                </div>
-              </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard label="Total"      value={stats.totalPedidos}  icon={<FlaskConical className="w-4 h-4" />} color="blue" />
+              <StatCard label="Pendientes" value={stats.pendientes}    icon={<AlertCircle className="w-4 h-4" />} color="amber" />
+              <StatCard label="Aprobados"  value={stats.aprobados}     icon={<CheckCircle2 className="w-4 h-4" />} color="emerald" />
+              <StatCard label="Rechazados" value={stats.rechazados}    icon={<XCircle className="w-4 h-4" />} color="rose" />
             </div>
 
-            <div className="bg-white rounded-xl border border-emerald-100 shadow-md overflow-hidden">
+            <LabSection
+              title="TODOS LOS PEDIDOS"
+              action={<><Download className="w-3 h-3" /> EXPORTAR</>}
+              onAction={handleExportarPedidos}
+            >
+              <div className="flex flex-col md:flex-row gap-3 mb-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+                  <input type="text" placeholder="Buscar pedido..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className={`${inputCls} pl-9`} />
+                </div>
+                <div className="relative w-full md:w-44">
+                  <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className={selectCls}>
+                    <option value="todos">Todos</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="aprobado">Aprobado</option>
+                    <option value="rechazado">Rechazado</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Acciones masivas */}
+              {selectedPedidos.size > 0 && (
+                <div className="flex items-center gap-3 mb-3 p-3 bg-[#E8F5F0]/60 border border-emerald-500/20 rounded-lg">
+                  <span className="text-[11px] font-mono text-[#1FA971]">{selectedPedidos.size} seleccionado(s)</span>
+                  <button
+                    onClick={() => handleBulkAction('aprobado')}
+                    disabled={bulkLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-mono font-bold text-[#1FA971] bg-[#E8F5F0] border border-[#1FA971]/25 hover:bg-[#E8F5F0] transition-colors disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-3 h-3" /> Aprobar todos
+                  </button>
+                  <button
+                    onClick={() => { if (selectedPedidos.size) setPedidoToReject({ id: [...selectedPedidos][0], codigo: 'BULK', producto: `${selectedPedidos.size} pedidos`, solicitante: '', motivo: '', _bulk: true }); }}
+                    disabled={bulkLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-mono font-bold text-rose-400 bg-rose-500/10 border border-rose-200 hover:bg-rose-100 transition-colors disabled:opacity-50"
+                  >
+                    <XCircle className="w-3 h-3" /> Rechazar todos
+                  </button>
+                  <button onClick={() => setSelectedPedidos(new Set())} className="ml-auto text-[10px] font-mono text-stone-500 hover:text-stone-600">Deseleccionar</button>
+                </div>
+              )}
+
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-[#f6fff2] border-b border-emerald-100">
-                    <tr>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-orange-700">Código</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-orange-700">Solicitante</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-orange-700">Producto</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-orange-700">Cantidad</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-orange-700">Prioridad</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-orange-700">Fecha Solicitud</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-orange-700">Estado</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-orange-700">Acciones</th>
+                  <thead>
+                    <tr className="border-b border-[#E0E0E0]">
+                      <th className="pb-3 w-8">
+                        <input
+                          type="checkbox"
+                          className="accent-emerald-500"
+                          checked={filteredPedidos.filter(p=>p.estado==='pendiente').length>0 && filteredPedidos.filter(p=>p.estado==='pendiente').every(p=>selectedPedidos.has(p.id))}
+                          onChange={toggleSelectAll}
+                        />
+                      </th>
+                      {['CÓDIGO','SOLICITANTE','PRODUCTO','CANT.','PRIORIDAD','ESTADO','ACCIONES'].map(h=>(
+                        <th key={h} className="pb-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>
+                      ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-orange-500/10">
-                    {filteredPedidos.length === 0 ? (
-                      <tr>
-                        <td colSpan="8" className="py-16 text-center text-slate-600 font-medium">
-                          No hay pedidos registrados
-                        </td>
-                      </tr>
-                    ) : filteredPedidos.map((pedido) => (
-                      <tr key={pedido.id} className="group hover:bg-orange-500/5 transition-all duration-200">
-                        <td className="py-5 px-5">
-                          <p className="font-bold text-slate-900 text-sm">{pedido.codigo}</p>
-                        </td>
-                        <td className="py-5 px-5">
-                          <p className="font-semibold text-slate-700 text-sm">{pedido.solicitante}</p>
-                        </td>
-                        <td className="py-5 px-5">
-                          <p className="text-slate-600 text-sm">{pedido.producto}</p>
-                          {pedido.evaluacion_seguridad?.reactivoCritico && (
-                            <span className="inline-flex mt-2 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 border border-amber-300">
-                              Solicitud restringida
-                            </span>
+                  <tbody className="divide-y divide-[#E0E0E0]">
+                    {filteredPedidos.length===0 ? (
+                      <tr><td colSpan={8} className="py-10 text-center text-stone-400 font-mono text-sm">Sin pedidos</td></tr>
+                    ) : filteredPedidos.map(p => (
+                      <tr key={p.id} className={`hover:bg-[#E8F5F0]/60 transition-colors ${selectedPedidos.has(p.id)?'bg-[#E8F5F0]/60':''}`}>
+                        <td className="py-3">
+                          {p.estado==='pendiente' && (
+                            <input type="checkbox" className="accent-emerald-500" checked={selectedPedidos.has(p.id)} onChange={()=>toggleSelect(p.id)} />
                           )}
                         </td>
-                        <td className="py-5 px-5 text-center">
-                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold text-sm bg-blue-100 text-blue-700">
-                            {pedido.cantidad}
-                          </span>
+                        <td className="py-3 text-[11px] font-mono font-bold text-stone-600">{p.codigo}</td>
+                        <td className="py-3 text-[11px] font-mono text-stone-600">{p.solicitante}</td>
+                        <td className="py-3 text-[11px] font-mono text-stone-600">{p.producto}</td>
+                        <td className="py-3 text-[11px] font-mono text-stone-500">{p.cantidad}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${p.prioridad==='alta'?'bg-rose-100 text-rose-400 border border-rose-200':p.prioridad==='media'?'bg-amber-100 text-amber-400 border border-amber-200':'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25'}`}>{p.prioridad}</span>
                         </td>
-                        <td className="py-5 px-5 text-center">
-                          <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold border ${pedido.prioridad === 'alta' ? 'bg-rose-100 text-rose-700 border-rose-300' : pedido.prioridad === 'media' ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-emerald-100 text-emerald-700 border-emerald-300'}`}>
-                            {pedido.prioridad}
-                          </span>
-                        </td>
-                        <td className="py-5 px-5 text-sm text-slate-600">{formatDisplayDate(pedido.fecha_solicitud)}</td>
-                        <td className="py-5 px-5 text-center">{getEstadoBadge(pedido.estado)}</td>
-                        <td className="py-5 px-5">
-                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                            <button onClick={() => handleVerPedido(pedido)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="Ver">
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleEditarPedido(pedido)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Editar">
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleEliminarPedido(pedido.id)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                            {pedido.estado === 'pendiente' && (
-                              <>
-                                <button onClick={() => handleCambiarEstadoPedido(pedido, 'aprobado')} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Aprobar">
-                                  <CheckCircle2 className="w-4 h-4" />
-                                </button>
-                                <button onClick={() => handleCambiarEstadoPedido(pedido, 'rechazado')} className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Rechazar">
-                                  <XCircle className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
+                        <td className="py-3"><EstadoBadge estado={p.estado} /></td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-1">
+                            <button onClick={()=>handleVerPedido(p)} className="p-1.5 text-stone-500 hover:text-stone-600 hover:bg-stone-100 rounded transition-colors" title="Ver"><Eye className="w-3.5 h-3.5" /></button>
+                            <button onClick={()=>openEvalModal(p)} className={`p-1.5 rounded transition-colors ${p.evaluacion_seguridad ? 'text-[#1FA971] bg-[#E8F5F0]' : 'text-stone-500 hover:text-[#1FA971] hover:bg-[#E8F5F0]'}`} title="Evaluación seguridad"><ShieldCheck className="w-3.5 h-3.5" /></button>
+                            {p.estado==='pendiente' && <>
+                              <button onClick={()=>handleCambiarEstadoPedido(p,'aprobado')} className="p-1.5 text-stone-500 hover:text-[#1FA971] hover:bg-[#E8F5F0] rounded transition-colors" title="Aprobar"><CheckCircle2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={()=>setPedidoToReject({ ...p, motivo: '' })} className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors" title="Rechazar"><XCircle className="w-3.5 h-3.5" /></button>
+                            </>}
                           </div>
                         </td>
                       </tr>
@@ -801,434 +558,296 @@ const JefeSuperiorDashboard = () => {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </LabSection>
           </div>
         )}
 
-        {activeTab === 'alertas' && (
-          <div>
-            <div className="mb-5 rounded-[24px] border border-rose-100 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-700">Alertas de jefatura</p>
-                  <p className="text-xs text-slate-500">Prioriza incidencias críticas y registra seguimiento oportuno.</p>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <div className="relative w-full md:w-52">
-                    <select
-                      value={alertPriorityFilter}
-                      onChange={(e) => setAlertPriorityFilter(e.target.value)}
-                      className="appearance-none bg-[#fff7f7] border border-rose-100 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-rose-300 cursor-pointer text-sm w-full transition-all"
-                    >
-                      <option value="todas">Todas las prioridades</option>
-                      <option value="alta">Alta</option>
-                      <option value="media">Media</option>
-                      <option value="baja">Baja</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  </div>
-                  <button
-                    onClick={handleExportarAlertasExcel}
-                    className="px-5 py-3 bg-white border border-emerald-100 text-slate-700 rounded-xl transition-all font-semibold shadow-sm text-sm whitespace-nowrap hover:bg-emerald-50"
-                  >
-                    <Download className="w-4 h-4 inline mr-2" />
-                    Exportar alertas
-                  </button>
-                </div>
-              </div>
+        {/* ── USUARIOS ─────────────────────────────────────────── */}
+        {activeTab === 'usuarios' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <StatCard label="Total Usuarios"  value={stats.totalUsuarios}  icon={<Users className="w-4 h-4" />} color="blue" />
+              <StatCard label="Administradores" value={usuarios.filter(u=>u.is_staff&&!u.is_superuser).length} icon={<Shield className="w-4 h-4" />} color="purple" />
+              <StatCard label="Activos"         value={usuarios.filter(u=>u.is_active!==false).length} icon={<UserCheck className="w-4 h-4" />} color="emerald" />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              <div className="rounded-2xl border border-rose-200 bg-white/80 p-5 shadow-sm">
-                <p className="text-sm font-semibold text-rose-600 uppercase">Total alertas</p>
-                <p className="text-3xl font-bold text-slate-900 mt-2">{statsAlertas.total}</p>
+            <LabSection title="GESTIÓN DE USUARIOS">
+              <div className="mb-4">
+                <div className="relative max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+                  <input type="text" placeholder="Buscar usuario..." value={userSearchTerm} onChange={e=>setUserSearchTerm(e.target.value)} className={`${inputCls} pl-9`} />
+                </div>
               </div>
-              <div className="rounded-2xl border border-amber-200 bg-white/80 p-5 shadow-sm">
-                <p className="text-sm font-semibold text-amber-600 uppercase">Nuevas</p>
-                <p className="text-3xl font-bold text-slate-900 mt-2">{statsAlertas.nuevas}</p>
-              </div>
-              <div className="rounded-2xl border border-indigo-200 bg-white/80 p-5 shadow-sm">
-                <p className="text-sm font-semibold text-indigo-600 uppercase">Prioridad alta</p>
-                <p className="text-3xl font-bold text-slate-900 mt-2">{statsAlertas.altas}</p>
-              </div>
-            </div>
 
-            <div className="bg-white rounded-xl border border-emerald-100 shadow-md overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-[#f6fff2] border-b border-emerald-100">
-                    <tr>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-red-700">Alerta</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-red-700">Remitente</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-red-700">Prioridad</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-red-700">Estado</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-red-700">Acción</th>
+                  <thead>
+                    <tr className="border-b border-[#E0E0E0]">
+                      {['USUARIO','EMAIL','DEPARTAMENTO','ROL','ACCIONES'].map(h=>(
+                        <th key={h} className="pb-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>
+                      ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-red-500/10">
-                    {filteredAlertas.length === 0 ? (
-                      <tr>
-                        <td colSpan="5" className="py-16 text-center text-slate-600 font-medium">No hay alertas registradas con ese filtro</td>
-                      </tr>
-                    ) : filteredAlertas.map((alerta) => (
-                      <tr key={alerta.id} className="group hover:bg-red-500/5 transition-all duration-200">
-                        <td className="py-5 px-5">
-                          <p className="font-bold text-slate-900 text-sm">{alerta.titulo}</p>
-                          <p className="text-xs text-slate-500 mt-1">{alerta.descripcion}</p>
+                  <tbody className="divide-y divide-[#E0E0E0]">
+                    {filteredUsuarios.length===0 ? (
+                      <tr><td colSpan={5} className="py-10 text-center text-stone-400 font-mono text-sm">Sin usuarios</td></tr>
+                    ) : filteredUsuarios.map(u => (
+                      <tr key={u.id} className="hover:bg-[#E8F5F0]/60 transition-colors">
+                        <td className="py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-[#E8F5F0] border border-[#1FA971]/25 flex items-center justify-center text-[10px] font-mono font-bold text-[#1FA971]">
+                              {(u.username||u.nombre||'?').slice(0,2).toUpperCase()}
+                            </div>
+                            <span className="text-sm font-mono text-stone-700">{u.username||u.nombre}</span>
+                          </div>
                         </td>
-                        <td className="py-5 px-5 text-sm text-slate-600">{alerta.remitente}</td>
-                        <td className="py-5 px-5 text-center">
-                          <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold border ${alerta.prioridad === 'alta' ? 'bg-rose-100 text-rose-700 border-rose-300' : alerta.prioridad === 'media' ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-emerald-100 text-emerald-700 border-emerald-300'}`}>
-                            {alerta.prioridad}
+                        <td className="py-3 text-[11px] font-mono text-stone-500">{u.email||'—'}</td>
+                        <td className="py-3 text-[11px] font-mono text-stone-500">{u.department||u.departamento||'—'}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${u.is_superuser?'bg-purple-100 text-purple-400 border border-purple-500/30':u.is_staff?'bg-blue-100 text-blue-400 border border-blue-200':'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25'}`}>
+                            {u.is_superuser?'Jefe':u.is_staff?'Admin':'Usuario'}
                           </span>
                         </td>
-                        <td className="py-5 px-5 text-center">
-                          <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold border ${alerta.estado === 'resuelta' ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-blue-100 text-blue-700 border-blue-300'}`}>
-                            {alerta.estado}
-                          </span>
-                        </td>
-                        <td className="py-5 px-5 text-center">
-                          <button
-                            onClick={() => handleResolverAlerta(alerta.id)}
-                            disabled={alerta.estado === 'resuelta'}
-                            className="px-3 py-2 rounded-lg bg-gradient-to-r from-red-500 to-orange-600 text-white text-xs font-semibold disabled:opacity-50"
-                          >
-                            Cerrar
-                          </button>
+                        <td className="py-3">
+                          <div className="flex items-center gap-1">
+                            <button onClick={()=>handleVerUsuario(u)} className="p-1.5 text-stone-500 hover:text-stone-600 hover:bg-stone-100 rounded transition-colors" title="Ver"><Eye className="w-3.5 h-3.5" /></button>
+                            <button onClick={()=>handleEditarUsuario(u)} className="p-1.5 text-stone-500 hover:text-[#1FA971] hover:bg-[#E8F5F0] rounded transition-colors" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
+                            <button onClick={()=>handleEliminarUsuario(u.id)} className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors" title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </LabSection>
           </div>
         )}
 
-        {activeTab === 'usuarios' && (
-          <div>
-            <div className="bg-white rounded-[24px] border border-emerald-100 shadow-[0_10px_30px_rgba(34,197,94,0.08)] p-5 md:p-6 mb-8">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
-                <div className="flex-1 max-w-sm">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Buscar usuario..."
-                      value={userSearchTerm}
-                      onChange={(e) => setUserSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-[#f8fff7] border border-emerald-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 text-sm transition-all"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <div className="relative w-full sm:w-44">
-                    <select
-                      value={userRoleFilter}
-                      onChange={(e) => setUserRoleFilter(e.target.value)}
-                      className="appearance-none bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-emerald-300 cursor-pointer text-sm w-full transition-all"
-                    >
-                      <option value="todos">Todos los roles</option>
-                      <option value="usuario">Usuario</option>
-                      <option value="admin">Administrador</option>
-                      <option value="jefe">Jefe superior</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  </div>
-                  <button
-                    onClick={handleExportarUsuariosExcel}
-                    className="px-5 py-3 bg-white border border-emerald-100 text-slate-700 rounded-xl transition-all font-semibold shadow-sm text-sm whitespace-nowrap hover:bg-emerald-50"
-                  >
-                    <Download className="w-4 h-4 inline mr-2" />
-                    Exportar
-                  </button>
-                  <button
-                    onClick={handleNuevoUsuario}
-                    className="px-5 py-3 bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white rounded-xl transition-all font-semibold shadow-md shadow-emerald-500/20 text-sm whitespace-nowrap"
-                  >
-                    <Plus className="w-4 h-4 inline mr-2" />
-                    Nuevo usuario
-                  </button>
-                </div>
-              </div>
+        {/* ── INVENTARIO (read-only) ────────────────────────────── */}
+        {activeTab === 'inventario' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <StatCard label="Total Productos"  value={productos.length}                                                  icon={<Package className="w-4 h-4" />} color="blue" />
+              <StatCard label="Bajo Stock"       value={productos.filter(p=>p.estado==='bajo_stock').length}               icon={<AlertCircle className="w-4 h-4" />} color="amber" />
+              <StatCard label="Agotados"         value={productos.filter(p=>p.estado==='agotado').length}                  icon={<XCircle className="w-4 h-4" />} color="rose" />
             </div>
 
-            <div className="bg-white rounded-xl border border-emerald-100 shadow-md overflow-hidden">
+            <LabSection title="INVENTARIO DE REACTIVOS (Vista de supervisor)">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-[#f6fff2] border-b border-emerald-100">
-                    <tr>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Nombre</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Email</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Rol</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Pedidos</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Rechazos</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-yellow-700">Acciones</th>
+                  <thead>
+                    <tr className="border-b border-[#E0E0E0]">
+                      {['PRODUCTO','CATEGORÍA','CANT.','UMBRAL','UBICACIÓN','ESTADO'].map(h=>(
+                        <th key={h} className="pb-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>
+                      ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-yellow-500/10">
-                    {filteredUsuarios.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" className="py-16 text-center text-slate-600 font-medium">
-                          No hay usuarios registrados
-                        </td>
+                  <tbody className="divide-y divide-[#E0E0E0]">
+                    {productos.length===0 ? (
+                      <tr><td colSpan={6} className="py-10 text-center text-stone-400 font-mono text-sm">Sin productos</td></tr>
+                    ) : productos.map(p => (
+                      <tr key={p.id} className="hover:bg-[#E8F5F0]/60 transition-colors">
+                        <td className="py-3 text-sm font-mono font-semibold text-stone-700">{p.nombre}</td>
+                        <td className="py-3"><span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">{p.categoria}</span></td>
+                        <td className="py-3"><span className={`inline-flex items-center justify-center w-8 h-8 rounded font-bold font-mono text-sm ${p.cantidad<=p.umbral_minimo?'bg-amber-100 text-amber-400':'bg-[#E8F5F0] text-[#1FA971]'}`}>{p.cantidad}</span></td>
+                        <td className="py-3 text-[11px] font-mono text-stone-500">{p.umbral_minimo}</td>
+                        <td className="py-3 text-[11px] font-mono text-stone-500">{p.ubicacion}</td>
+                        <td className="py-3"><EstadoBadge estado={p.estado} /></td>
                       </tr>
-                    ) : filteredUsuarios.map((usuario) => {
-                      const tasaRechazo = usuario.total_pedidos ? ((usuario.rechazos / usuario.total_pedidos) * 100).toFixed(1) : '0.0';
-                      return (
-                        <tr key={usuario.id} className="group hover:bg-yellow-500/5 transition-all duration-200">
-                          <td className="py-5 px-5">
-                            <p className="font-bold text-slate-900 text-sm">{usuario.nombre}</p>
-                          </td>
-                          <td className="py-5 px-5">
-                            <p className="text-slate-600 text-sm">{usuario.email}</p>
-                          </td>
-                          <td className="py-5 px-5 text-center">
-                            <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-700 border-slate-300">
-                              {usuario.rol || 'usuario'}
-                            </span>
-                          </td>
-                          <td className="py-5 px-5 text-center">
-                            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold text-sm bg-blue-100 text-blue-700">
-                              {usuario.total_pedidos || 0}
-                            </span>
-                          </td>
-                          <td className="py-5 px-5 text-center">
-                            <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold border ${Number(tasaRechazo) > 50 ? 'bg-rose-100 text-rose-700 border-rose-300' : 'bg-amber-100 text-amber-700 border-amber-300'}`}>
-                              {usuario.rechazos || 0}
-                            </span>
-                          </td>
-                          <td className="py-5 px-5">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button onClick={() => handleVerUsuario(usuario)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="Ver">
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => handleEditarUsuario(usuario)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Editar">
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => handleEliminarUsuario(usuario.id)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </LabSection>
+          </div>
+        )}
+
+        {/* ── BITÁCORA ─────────────────────────────────────────── */}
+        {activeTab === 'bitacora' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <StatCard label="Registros totales" value={auditoria.length}                                      icon={<Activity className="w-4 h-4" />} color="blue" />
+              <StatCard label="Acciones hoy"      value={auditoria.filter(a=>a.fecha?.startsWith(new Date().toISOString().slice(0,10))).length} icon={<Clock className="w-4 h-4" />} color="amber" />
+              <StatCard label="Módulos activos"   value={[...new Set(auditoria.map(a=>a.modulo).filter(Boolean))].length} icon={<RefreshCw className="w-4 h-4" />} color="emerald" />
+            </div>
+
+            <LabSection
+              title="BITÁCORA DE AUDITORÍA"
+              action={<><Download className="w-3 h-3" /> EXPORTAR</>}
+              onAction={() => exportToExcel(auditoria.map(a=>({ usuario:a.usuario, accion:a.accion, modulo:a.modulo, descripcion:a.descripcion, fecha:a.fecha })), 'bitacora.xlsx') && toast.success('Exportado')}
+            >
+              <div className="flex flex-col md:flex-row gap-3 mb-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+                  <input type="text" placeholder="Buscar usuario, acción..." value={auditSearch} onChange={e=>setAuditSearch(e.target.value)} className={`${inputCls} pl-9`} />
+                </div>
+                <div className="relative w-full md:w-44">
+                  <select value={auditModulo} onChange={e=>setAuditModulo(e.target.value)} className={selectCls}>
+                    <option value="">Todos los módulos</option>
+                    {[...new Set(auditoria.map(a=>a.modulo).filter(Boolean))].map(m=>(
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400 pointer-events-none" />
+                </div>
+              </div>
+
+              {auditLoading ? (
+                <div className="py-10 text-center text-stone-500 font-mono text-sm">Cargando bitácora...</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-[#E0E0E0]">
+                        {['USUARIO','ACCIÓN','MÓDULO','DESCRIPCIÓN','FECHA'].map(h=>(
+                          <th key={h} className="pb-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E0E0E0]">
+                      {auditoria.length===0 ? (
+                        <tr><td colSpan={5} className="py-10 text-center text-stone-400 font-mono text-sm">Sin registros de auditoría</td></tr>
+                      ) : auditoria.map((a, i) => (
+                        <tr key={a.id||i} className="hover:bg-[#E8F5F0]/60 transition-colors">
+                          <td className="py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center text-[9px] font-mono font-bold text-blue-400">
+                                {String(a.usuario||'?').slice(0,2).toUpperCase()}
+                              </div>
+                              <span className="text-[11px] font-mono text-stone-600">{a.usuario||'Sistema'}</span>
                             </div>
                           </td>
+                          <td className="py-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              a.accion==='crear'||a.accion==='create' ? 'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25' :
+                              a.accion==='eliminar'||a.accion==='delete' ? 'bg-rose-100 text-rose-400 border border-rose-200' :
+                              'bg-amber-100 text-amber-400 border border-amber-200'
+                            }`}>{a.accion||'—'}</span>
+                          </td>
+                          <td className="py-3"><span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">{a.modulo||'—'}</span></td>
+                          <td className="py-3 text-[11px] font-mono text-stone-500 max-w-xs truncate">{a.descripcion||'—'}</td>
+                          <td className="py-3 text-[10px] font-mono text-stone-500">{a.fecha ? new Date(a.fecha).toLocaleString('es-CO') : '—'}</td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-        {showPedidoModal && (
-          <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-2xl rounded-[28px] sigirl-form-surface overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-emerald-100 bg-gradient-to-r from-[#f6fff2] to-white">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">{selectedPedido ? 'Editar pedido' : 'Nuevo pedido'}</h2>
-                  <p className="text-sm text-slate-500">Gestiona la información del pedido</p>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <button
-                  onClick={() => {
-                    setShowPedidoModal(false);
-                    resetPedidoForm();
-                  }}
-                  className="p-2 rounded-lg hover:bg-slate-200 transition-colors"
-                >
-                  <XCircle className="w-5 h-5 text-slate-600" />
-                </button>
-              </div>
-
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Código</label>
-                  <input value={formPedido.codigo} readOnly className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-100" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Fecha solicitud</label>
-                  <input
-                    type="date"
-                    value={formPedido.fecha_solicitud}
-                    onChange={(e) => setFormPedido({ ...formPedido, fecha_solicitud: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Producto</label>
-                  <select
-                    value={formPedido.productoId}
-                    onChange={(e) => setFormPedido({ ...formPedido, productoId: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                  >
-                    <option value="">Selecciona un producto</option>
-                    {productos.map((p) => (
-                      <option key={p.id} value={p.id}>{p.nombre} (Stock: {p.cantidad})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Solicitante</label>
-                  <input
-                    type="text"
-                    value={formPedido.solicitante}
-                    onChange={(e) => setFormPedido({ ...formPedido, solicitante: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                    placeholder="Nombre del solicitante"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Cantidad</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={formPedido.cantidad}
-                    onChange={(e) => setFormPedido({ ...formPedido, cantidad: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Prioridad</label>
-                  <select
-                    value={formPedido.prioridad}
-                    onChange={(e) => setFormPedido({ ...formPedido, prioridad: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                  >
-                    <option value="baja">Baja</option>
-                    <option value="media">Media</option>
-                    <option value="alta">Alta</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Estado</label>
-                  <select
-                    value={formPedido.estado}
-                    onChange={(e) => setFormPedido({ ...formPedido, estado: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                  >
-                    <option value="pendiente">Pendiente</option>
-                    <option value="aprobado">Aprobado</option>
-                    <option value="rechazado">Rechazado</option>
-                  </select>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Observaciones</label>
-                  <textarea
-                    rows="3"
-                    value={formPedido.observaciones}
-                    onChange={(e) => setFormPedido({ ...formPedido, observaciones: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                    placeholder="Notas adicionales"
-                  />
-                </div>
-                {formPedido.estado === 'rechazado' && (
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Motivo de rechazo</label>
-                    <input
-                      type="text"
-                      value={formPedido.motivo_rechazo}
-                      onChange={(e) => setFormPedido({ ...formPedido, motivo_rechazo: e.target.value })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400"
-                      placeholder="Indica por qué se rechaza"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="sigirl-form-footer px-6 py-4 border-t border-emerald-100 bg-[#f8fff7]">
-                <button
-                  onClick={() => {
-                    setShowPedidoModal(false);
-                    resetPedidoForm();
-                  }}
-                  className="sigirl-btn-secondary"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleGuardarPedido}
-                  className="sigirl-btn-primary"
-                >
-                  {selectedPedido ? 'Guardar cambios' : 'Crear pedido'}
-                </button>
-              </div>
-            </div>
+              )}
+            </LabSection>
           </div>
         )}
 
-        {showUsuarioModal && (
-          <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-xl rounded-[28px] sigirl-form-surface overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-emerald-100 bg-gradient-to-r from-[#f6fff2] to-white">
+        {/* ── MODAL USUARIO ──────────────────────────────────────── */}        {showUsuarioModal && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-white border border-[#E0E0E0] rounded-lg overflow-hidden shadow-2xl">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0]">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">{selectedUsuario ? 'Editar usuario' : 'Nuevo usuario'}</h2>
-                  <p className="text-sm text-slate-500">Administra la lista de usuarios del sistema</p>
+                  <h2 className="text-sm font-mono font-bold text-[#1FA971] uppercase tracking-wider">EDITAR USUARIO</h2>
+                  <p className="text-[10px] font-mono text-stone-500 mt-0.5">Modifica los datos del usuario</p>
                 </div>
-                <button
-                  onClick={() => {
-                    setShowUsuarioModal(false);
-                    resetUsuarioForm();
-                  }}
-                  className="p-2 rounded-lg hover:bg-slate-200 transition-colors"
-                >
-                  <XCircle className="w-5 h-5 text-slate-600" />
-                </button>
+                <button onClick={()=>{ setShowUsuarioModal(false); resetUsuarioForm(); }} className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"><XCircle className="w-4 h-4" /></button>
               </div>
-
-              <div className="p-6 grid grid-cols-1 gap-4">
+              <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Nombre</label>
-                  <input
-                    type="text"
-                    value={formUsuario.nombre}
-                    onChange={(e) => setFormUsuario({ ...formUsuario, nombre: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                    placeholder="Nombre completo"
-                  />
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Usuario</label>
+                  <input type="text" value={formUsuario.nombre} onChange={e=>setFormUsuario({...formUsuario,nombre:e.target.value})} className={inputCls} placeholder="nombre_usuario" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Correo</label>
-                  <input
-                    type="email"
-                    value={formUsuario.email}
-                    onChange={(e) => setFormUsuario({ ...formUsuario, email: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                    placeholder="correo@dominio.com"
-                  />
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Email</label>
+                  <input type="email" value={formUsuario.email} onChange={e=>setFormUsuario({...formUsuario,email:e.target.value})} className={inputCls} placeholder="correo@ejemplo.com" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Rol</label>
-                  <select
-                    value={formUsuario.rol}
-                    onChange={(e) => setFormUsuario({ ...formUsuario, rol: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                  >
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Departamento</label>
+                  <input type="text" value={formUsuario.departamento} onChange={e=>setFormUsuario({...formUsuario,departamento:e.target.value})} className={inputCls} placeholder="Laboratorio General" />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Rol</label>
+                  <select value={formUsuario.rol} onChange={e=>setFormUsuario({...formUsuario,rol:e.target.value})} className={selectCls}>
                     <option value="usuario">Usuario</option>
-                    <option value="admin">Administrador</option>
-                    <option value="jefe">Jefe superior</option>
+                    <option value="admin">Admin</option>
+                    <option value="jefe">Jefe</option>
                   </select>
                 </div>
               </div>
-
-              <div className="sigirl-form-footer px-6 py-4 border-t border-emerald-100 bg-[#f8fff7]">
-                <button
-                  onClick={() => {
-                    setShowUsuarioModal(false);
-                    resetUsuarioForm();
-                  }}
-                  className="sigirl-btn-secondary"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleGuardarUsuario}
-                  className="sigirl-btn-primary"
-                >
-                  {selectedUsuario ? 'Guardar cambios' : 'Crear usuario'}
-                </button>
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+                <button onClick={()=>{ setShowUsuarioModal(false); resetUsuarioForm(); }} className="px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors">Cancelar</button>
+                <button onClick={handleGuardarUsuario} className="px-4 py-2 rounded text-xs font-mono font-bold bg-[#1FA971] text-white hover:bg-[#157A55] transition-colors shadow-sm">Guardar</button>
               </div>
             </div>
           </div>
         )}
+
+        <RejectPedidoModal
+          open={Boolean(pedidoToReject)}
+          pedido={pedidoToReject}
+          motivo={pedidoToReject?.motivo || ''}
+          onChangeMotivo={(motivo) => setPedidoToReject((prev) => prev ? { ...prev, motivo } : prev)}
+          onClose={() => setPedidoToReject(null)}
+          onConfirm={() => {
+            if (!pedidoToReject) return;
+            if (pedidoToReject._bulk) {
+              // acción masiva
+              const motivo = pedidoToReject.motivo?.trim();
+              if (!motivo) { toast.error('Debes indicar un motivo'); return; }
+              setBulkLoading(true);
+              Promise.all([...selectedPedidos].map(id => updatePedido(id, { estado: 'rechazado', motivo_rechazo: motivo })))
+                .then(updates => {
+                  setPedidos(prev => prev.map(p => {
+                    const upd = updates.find(r => r.data.id === p.id);
+                    return upd ? { ...p, ...upd.data, producto: upd.data.producto_nombre || upd.data.producto } : p;
+                  }));
+                  setSelectedPedidos(new Set());
+                  toast.success(`${updates.length} pedido(s) rechazados`);
+                })
+                .catch(() => toast.error('Error al rechazar'))
+                .finally(() => { setBulkLoading(false); setPedidoToReject(null); });
+            } else {
+              handleCambiarEstadoPedido(pedidoToReject, 'rechazado');
+            }
+          }}
+        />
+
+        {/* ── MODAL EVALUACIÓN DE SEGURIDAD ──────────────────────── */}
+        {evalModal && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-white border border-[#E0E0E0] rounded-lg overflow-hidden shadow-2xl">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0]">
+                <div>
+                  <h2 className="text-sm font-mono font-bold text-[#1FA971] uppercase tracking-wider flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4" /> EVALUACIÓN DE SEGURIDAD
+                  </h2>
+                  <p className="text-[10px] font-mono text-stone-500 mt-0.5">Pedido: {evalModal.pedido.codigo} — {evalModal.pedido.producto}</p>
+                </div>
+                <button onClick={()=>setEvalModal(null)} className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"><XCircle className="w-4 h-4" /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Nivel de riesgo</label>
+                  <select value={evalForm.nivel_riesgo} onChange={e=>setEvalForm({...evalForm,nivel_riesgo:e.target.value})} className={selectCls}>
+                    <option value="bajo">🟢 Bajo</option>
+                    <option value="medio">🟠 Medio</option>
+                    <option value="alto">🔴 Alto</option>
+                    <option value="critico">⛔ Crítico</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">EPP requerido</label>
+                  <input type="text" placeholder="Guantes, bata, gafas..." value={evalForm.epp} onChange={e=>setEvalForm({...evalForm,epp:e.target.value})} className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Observaciones de seguridad</label>
+                  <textarea rows={3} value={evalForm.observacion} onChange={e=>setEvalForm({...evalForm,observacion:e.target.value})} className={`${inputCls} resize-none`} placeholder="Restricciones, condiciones especiales..." />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+                <button onClick={()=>setEvalModal(null)} className="px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors">Cancelar</button>
+                <button onClick={handleGuardarEval} className="px-4 py-2 rounded text-xs font-mono font-bold bg-[#1FA971] text-white hover:bg-[#157A55] transition-colors shadow-sm">Guardar evaluación</button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </Layout>
   );

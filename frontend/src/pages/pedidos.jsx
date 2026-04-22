@@ -1,17 +1,66 @@
-// Vista operativa de pedidos.
-// Gestiona solicitudes, estados y registro de nuevos requerimientos.
+﻿// Vista de pedidos — Tema Laboratorio Oscuro
 import { useState, useEffect, useMemo, useContext } from 'react';
 import { toast } from 'react-toastify';
-import { Search, ChevronDown, Plus, User, Eye, CheckCircle2, XCircle, ShoppingCart, Clock, AlertCircle, Download } from 'lucide-react';
+import { Search, ChevronDown, Plus, Eye, CheckCircle2, XCircle, ShoppingCart, Clock, AlertCircle, Download } from 'lucide-react';
 import Layout from '../components/Layout';
-import { UserContext } from '../context/AuthContext';
+import RejectPedidoModal from '../components/RejectPedidoModal';
+import { UserContext } from '../context/UserContext';
 import { exportToExcel } from '../utils/reportExport';
 import { getPedidos, createPedido, updatePedido, getProductos } from '../services/api';
+
+const inputCls = 'w-full bg-stone-50 border border-[#E0E0E0] rounded-md px-3 py-2.5 text-sm font-mono text-stone-700 placeholder-stone-400 focus:outline-none focus:border-emerald-500 transition-colors';
+const selectCls = `${inputCls} appearance-none cursor-pointer`;
+
+const ESTADO_STYLES = {
+  pendiente:  'bg-amber-100  text-amber-400  border-amber-200',
+  aprobado:   'bg-[#E8F5F0] text-[#1FA971] border-[#1FA971]/25',
+  entregado:  'bg-blue-100   text-blue-400   border-blue-200',
+  rechazado:  'bg-rose-100   text-rose-400   border-rose-200',
+};
+const PRIORIDAD_STYLES = {
+  alta:  'bg-rose-100  text-rose-400  border-rose-200',
+  media: 'bg-amber-100 text-amber-400 border-amber-200',
+  baja:  'bg-stone-100 text-stone-500 border-stone-200',
+};
+
+const EstadoBadge = ({ estado }) => {
+  const dots = { pendiente: 'bg-amber-400', aprobado: 'bg-emerald-400 animate-pulse', entregado: 'bg-blue-400', rechazado: 'bg-rose-400' };
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${ESTADO_STYLES[estado] || 'bg-stone-100 text-stone-500 border-stone-200'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dots[estado] || 'bg-stone-400'}`} />
+      {estado}
+    </span>
+  );
+};
+
+const StatCard = ({ label, value, icon, color = 'emerald' }) => {
+  const colors = { emerald: 'border-[#1FA971]/25 text-[#1FA971] bg-[#E8F5F0]', amber: 'border-amber-200 text-amber-400 bg-amber-500/10', rose: 'border-rose-200 text-rose-400 bg-rose-500/10', blue: 'border-blue-200 text-blue-400 bg-blue-500/10' };
+  return (
+    <div className="bg-white border border-[#E0E0E0] rounded-lg p-4 hover:border-[#1FA971]/35 transition-colors">
+      <div className="flex items-start justify-between">
+        <div>
+          <span className="text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider">{label}</span>
+          <p className={`text-3xl font-bold font-mono mt-1 ${colors[color].split(' ')[1]}`}>{value}</p>
+        </div>
+        <div className={`p-2 rounded-md border ${colors[color]}`}>{icon}</div>
+      </div>
+    </div>
+  );
+};
+
+const LabSection = ({ title, children }) => (
+  <div className="bg-white border border-[#E0E0E0] rounded-lg overflow-hidden">
+    <div className="px-5 py-3 border-b border-[#E0E0E0]">
+      <span className="text-xs font-mono font-bold text-[#1FA971] uppercase tracking-wider">{title}</span>
+    </div>
+    <div className="p-5">{children}</div>
+  </div>
+);
 
 const Pedidos = () => {
   const { user, role } = useContext(UserContext);
   const normalizedRole = role === 'jefe_superior' ? 'jefe' : role;
-  const canManagePedidos = normalizedRole === 'admin' || normalizedRole === 'jefe';
+  const canManage = normalizedRole === 'admin' || normalizedRole === 'jefe';
   const currentUsername = (user?.username || localStorage.getItem('username') || 'usuario').toLowerCase();
 
   const [pedidos, setPedidos] = useState([]);
@@ -21,20 +70,14 @@ const Pedidos = () => {
   const [filterStatus, setFilterStatus] = useState('todos');
   const [filterPriority, setFilterPriority] = useState('todas');
   const [showModal, setShowModal] = useState(false);
-  
-  // Formulario para nuevo pedido
-  const [formPedido, setFormPedido] = useState({
-    productoId: '',
-    cantidad: '',
-    prioridad: 'media',
-    observaciones: ''
-  });
+  const [formPedido, setFormPedido] = useState({ productoId: '', cantidad: '', prioridad: 'media', observaciones: '' });
+  const [pedidoToReject, setPedidoToReject] = useState(null);
 
   const normalizePedido = (p) => ({
     ...p,
     producto: p.producto_nombre || p.producto || '',
     solicitante: p.solicitante || p.usuario_username || '',
-    codigo: p.codigo || `PED-${String(p.id).padStart(3, '0')}`,
+    codigo: p.codigo || `PED-${String(p.id).padStart(3,'0')}`,
   });
 
   useEffect(() => {
@@ -42,493 +85,219 @@ const Pedidos = () => {
       getPedidos().catch(() => ({ data: [] })),
       getProductos().catch(() => ({ data: [] })),
     ]).then(([pedidosRes, productosRes]) => {
-      setPedidos((pedidosRes.data || []).map(normalizePedido));
-      setProductos(productosRes.data || []);
+      const pData = pedidosRes.data?.results ?? pedidosRes.data ?? [];
+      const prData = productosRes.data?.results ?? productosRes.data ?? [];
+      setPedidos(pData.map(normalizePedido));
+      setProductos(prData);
     }).finally(() => setLoading(false));
   }, []);
 
-  const getEstadoBadge = (estado) => {
-    const styles = {
-      pendiente: 'bg-amber-100 text-amber-700 border border-amber-300',
-      aprobado: 'bg-blue-100 text-blue-700 border border-blue-300',
-      entregado: 'bg-emerald-100 text-emerald-700 border border-emerald-300',
-      rechazado: 'bg-rose-100 text-rose-700 border border-rose-300'
-    };
-
-    const icons = {
-      pendiente: '⏳',
-      aprobado: '✅',
-      entregado: '📦',
-      rechazado: '❌'
-    };
-
-    const labels = {
-      pendiente: 'Pendiente',
-      aprobado: 'Aprobado',
-      entregado: 'Entregado',
-      rechazado: 'Rechazado'
-    };
-
-    return (
-      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${styles[estado]}`}>
-        {icons[estado]}
-        {labels[estado]}
-      </span>
-    );
-  };
-
-  const getPrioridadBadge = (prioridad) => {
-    const styles = {
-      alta: 'bg-rose-100 text-rose-700 border border-rose-300',
-      media: 'bg-amber-100 text-amber-700 border border-amber-300',
-      baja: 'bg-slate-100 text-slate-700 border border-slate-300'
-    };
-
-    const icons = {
-      alta: '🔴',
-      media: '🟡',
-      baja: '🟢'
-    };
-
-    return (
-      <span className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold ${styles[prioridad]}`}>
-        {icons[prioridad]}
-        {prioridad.charAt(0).toUpperCase() + prioridad.slice(1)}
-      </span>
-    );
-  };
-
   const visiblePedidos = useMemo(() => {
-    if (canManagePedidos) return pedidos;
-
-    return pedidos.filter((pedido) => {
-      const candidates = [pedido.solicitante, pedido.creadoPor, pedido.usuario_username]
-        .filter(Boolean)
-        .map((value) => String(value).toLowerCase());
+    if (canManage) return pedidos;
+    return pedidos.filter((p) => {
+      const candidates = [p.solicitante, p.creadoPor, p.usuario_username].filter(Boolean).map((v) => String(v).toLowerCase());
       return candidates.includes(currentUsername);
     });
-  }, [pedidos, canManagePedidos, currentUsername]);
+  }, [pedidos, canManage, currentUsername]);
 
-  const filteredPedidos = visiblePedidos.filter((pedido) => {
-    const search = searchTerm.toLowerCase();
-    const matchesSearch = (pedido.producto || '').toLowerCase().includes(search)
-      || (pedido.solicitante || '').toLowerCase().includes(search)
-      || (pedido.codigo || '').toLowerCase().includes(search);
-    const matchesFilter = filterStatus === 'todos' || pedido.estado === filterStatus;
-    const matchesPriority = filterPriority === 'todas' || pedido.prioridad === filterPriority;
-    return matchesSearch && matchesFilter && matchesPriority;
+  const filteredPedidos = visiblePedidos.filter((p) => {
+    const t = searchTerm.toLowerCase();
+    return ((p.producto||'').toLowerCase().includes(t) || (p.solicitante||'').toLowerCase().includes(t) || (p.codigo||'').toLowerCase().includes(t))
+      && (filterStatus === 'todos' || p.estado === filterStatus)
+      && (filterPriority === 'todas' || p.prioridad === filterPriority);
   });
-
-  const showDetalleToast = (title, lines) => {
-    toast.info(
-      <div className="text-sm">
-        <p className="font-semibold mb-2">{title}</p>
-        <div className="space-y-1">
-          {lines.filter(Boolean).map((line, index) => (
-            <p key={`${title}-${index}`}>{line}</p>
-          ))}
-        </div>
-      </div>,
-      { autoClose: 7000, closeOnClick: false }
-    );
-  };
-
-  // 🎯 FUNCIONES PARA MANEJAR PEDIDOS
-  const handleGuardarPedido = async () => {
-    if (!formPedido.productoId || !formPedido.cantidad) {
-      toast.error('Por favor completa todos los campos');
-      return;
-    }
-
-    try {
-      const res = await createPedido({
-        producto: Number(formPedido.productoId),
-        cantidad: parseInt(formPedido.cantidad),
-        prioridad: formPedido.prioridad,
-        observaciones: formPedido.observaciones,
-      });
-      setPedidos((prev) => [normalizePedido(res.data), ...prev]);
-      setFormPedido({ productoId: '', cantidad: '', prioridad: 'media', observaciones: '' });
-      setShowModal(false);
-      toast.success('Pedido creado exitosamente');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Error al crear el pedido');
-    }
-  };
-
-  const handleAprobarPedido = async (id) => {
-    if (!canManagePedidos) {
-      toast.error('Tu rol no puede aprobar pedidos.');
-      return;
-    }
-    try {
-      const res = await updatePedido(id, { estado: 'aprobado' });
-      setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(res.data) : p));
-      toast.success('Pedido aprobado');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Error al aprobar el pedido');
-    }
-  };
-
-  const handleRechazarPedido = async (id) => {
-    if (!canManagePedidos) {
-      toast.error('Tu rol no puede rechazar pedidos.');
-      return;
-    }
-    const motivo = prompt('¿Cuál es el motivo del rechazo?');
-    if (motivo === null) return;
-    try {
-      const res = await updatePedido(id, { estado: 'rechazado', motivo_rechazo: motivo });
-      setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(res.data) : p));
-      toast.error('Pedido rechazado');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Error al rechazar el pedido');
-    }
-  };
-
-  const handleExportarPedidos = () => {
-    if (!canManagePedidos) {
-      toast.info('Solo administración y jefatura pueden exportar todos los pedidos.');
-      return;
-    }
-
-    const rows = filteredPedidos.map((pedido) => ({
-      Codigo: pedido.codigo,
-      Producto: pedido.producto,
-      Cantidad: pedido.cantidad,
-      Solicitante: pedido.solicitante,
-      Departamento: pedido.departamento,
-      Estado: pedido.estado,
-      Prioridad: pedido.prioridad,
-      'Fecha solicitud': pedido.fecha_solicitud,
-      'Fecha entrega': pedido.fecha_entrega || '',
-      Observaciones: pedido.observaciones || '',
-    }));
-
-    exportToExcel(rows, `pedidos-sigirl-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Pedidos');
-    toast.success('Pedidos exportados correctamente.');
-  };
 
   const stats = {
     total: visiblePedidos.length,
-    pendientes: visiblePedidos.filter(p => p.estado === 'pendiente').length,
-    aprobados: visiblePedidos.filter(p => p.estado === 'aprobado').length,
-    entregados: visiblePedidos.filter(p => p.estado === 'entregado').length
+    pendientes: visiblePedidos.filter((p) => p.estado === 'pendiente').length,
+    aprobados: visiblePedidos.filter((p) => p.estado === 'aprobado').length,
+    rechazados: visiblePedidos.filter((p) => p.estado === 'rechazado').length,
   };
+
+  const handleGuardarPedido = async () => {
+    if (!formPedido.productoId || !formPedido.cantidad) { toast.error('Completa todos los campos'); return; }
+    try {
+      const { data } = await createPedido({ producto: Number(formPedido.productoId), cantidad: parseInt(formPedido.cantidad), prioridad: formPedido.prioridad, observaciones: formPedido.observaciones });
+      setPedidos((prev) => [normalizePedido(data), ...prev]);
+      setFormPedido({ productoId: '', cantidad: '', prioridad: 'media', observaciones: '' });
+      setShowModal(false);
+      toast.success('Pedido creado');
+    } catch (err) { toast.error(err.response?.data?.error || 'Error al crear el pedido'); }
+  };
+
+  const handleAprobarPedido = async (id) => {
+    if (!canManage) { toast.error('Sin permisos.'); return; }
+    try {
+      const { data } = await updatePedido(id, { estado: 'aprobado' });
+      setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(data) : p));
+      toast.success('Pedido aprobado');
+    } catch (err) { toast.error(err.response?.data?.error || 'Error al aprobar'); }
+  };
+
+  const handleRechazarPedido = async (id) => {
+    if (!canManage) { toast.error('Sin permisos.'); return; }
+    const motivo = String(pedidoToReject?.motivo || '').trim();
+    if (!motivo) { toast.error('Debes indicar un motivo de rechazo'); return; }
+    try {
+      const { data } = await updatePedido(id, { estado: 'rechazado', motivo_rechazo: motivo });
+      setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(data) : p));
+      setPedidoToReject(null);
+      toast.info('Pedido rechazado');
+    } catch (err) { toast.error(err.response?.data?.error || 'Error al rechazar'); }
+  };
+
+  const handleExportar = () => {
+    if (!canManage) { toast.info('Solo administración puede exportar.'); return; }
+    exportToExcel(filteredPedidos.map((p) => ({ Codigo: p.codigo, Producto: p.producto, Cantidad: p.cantidad, Solicitante: p.solicitante, Estado: p.estado, Prioridad: p.prioridad, 'Fecha solicitud': p.fecha_solicitud })), `pedidos-sigirl-${new Date().toISOString().slice(0,10)}.xlsx`, 'Pedidos');
+    toast.success('Exportado a Excel');
+  };
+
+  if (loading) return <Layout><div className="flex items-center justify-center h-64"><div className="text-center"><div className="w-3 h-3 rounded-full mx-auto mb-3 bg-emerald-400 animate-pulse shadow-[0_0_6px_#1FA971]" /><p className="text-stone-500 font-mono text-sm">CARGANDO PEDIDOS...</p></div></div></Layout>;
 
   return (
     <Layout>
-      <div>
-          {!canManagePedidos && (
-            <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-              En tu cuenta solo se muestran tus propios pedidos y solo puedes crear solicitudes nuevas para ti.
-            </div>
-          )}
+      <div className="space-y-5">
 
-          <div className="mb-10 rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_12px_35px_rgba(34,197,94,0.10)] backdrop-blur-xl md:p-6">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <div>
-                <h1 className="text-[34px] font-bold text-slate-800">Pedidos generales PRO</h1>
-                <p className="text-slate-500 text-base">Consulta y administra las solicitudes de materiales y reactivos con una vista más moderna y clara.</p>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                    {stats.total} pedidos
-                  </span>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
-                    {stats.pendientes} pendientes
-                  </span>
-                  <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-                    {stats.aprobados} aprobados
-                  </span>
-                </div>
-              </div>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#22c55e]" />
+              <span className="text-[9px] font-mono font-bold text-[#1FA971] uppercase tracking-widest">SIGIRL · MÓDULO PEDIDOS</span>
             </div>
+            <h1 className="text-2xl font-bold font-mono text-stone-800">Gestión de Pedidos</h1>
+            <p className="text-xs font-mono text-stone-500 mt-1">Seguimiento y aprobación de solicitudes</p>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
-            <div className="rounded-[20px] bg-gradient-to-r from-blue-500 to-blue-600 text-white p-5 shadow-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white/90">Total Pedidos</p>
-                  <p className="text-4xl font-bold mt-2">{stats.total}</p>
-                </div>
-                <div className="p-3 rounded-xl bg-white/15">
-                  <ShoppingCart className="w-6 h-6 text-white" />
-                </div>
-              </div>
-            </div>
-            <div className="rounded-[20px] bg-gradient-to-r from-red-500 to-rose-500 text-white p-5 shadow-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white/90">Pendientes</p>
-                  <p className="text-4xl font-bold mt-2">{stats.pendientes}</p>
-                </div>
-                <div className="p-3 rounded-xl bg-white/15">
-                  <Clock className="w-6 h-6 text-white" />
-                </div>
-              </div>
-            </div>
-            <div className="rounded-[20px] bg-gradient-to-r from-amber-400 to-orange-500 text-white p-5 shadow-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white/90">Aprobados</p>
-                  <p className="text-4xl font-bold mt-2">{stats.aprobados}</p>
-                </div>
-                <div className="p-3 rounded-xl bg-white/15">
-                  <CheckCircle2 className="w-6 h-6 text-white" />
-                </div>
-              </div>
-            </div>
-            <div className="rounded-[20px] bg-gradient-to-r from-lime-500 to-green-600 text-white p-5 shadow-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white/90">Entregados</p>
-                  <p className="text-4xl font-bold mt-2">{stats.entregados}</p>
-                </div>
-                <div className="p-3 rounded-xl bg-white/15">
-                  <CheckCircle2 className="w-6 h-6 text-white" />
-                </div>
-              </div>
-            </div>
+          <div className="flex gap-2">
+            {canManage && (
+              <button onClick={handleExportar} className="inline-flex items-center gap-1.5 px-3 py-2 rounded text-xs font-mono font-bold bg-white border border-[#E0E0E0] text-stone-500 hover:border-[#1FA971]/35 hover:text-stone-700 transition-colors">
+                <Download className="w-3.5 h-3.5" /> Exportar
+              </button>
+            )}
+            <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded text-xs font-mono font-bold bg-[#1FA971] text-white hover:bg-[#157A55] transition-colors shadow-sm">
+              <Plus className="w-3.5 h-3.5" /> Nuevo pedido
+            </button>
           </div>
+        </div>
 
-          <div className="bg-white rounded-[24px] border border-emerald-100 shadow-[0_10px_30px_rgba(34,197,94,0.08)] p-5 md:p-6 mb-8">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
-              <div className="flex flex-col sm:flex-row gap-3 md:gap-4 flex-1">
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Buscar código, producto o solicitante..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-[#f8fff7] border border-emerald-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 text-sm transition-all"
-                  />
-                </div>
-                
-                <div className="relative w-full sm:w-44">
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="appearance-none bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-emerald-300 cursor-pointer text-sm w-full transition-all"
-                  >
-                    <option value="todos">Todos los estados</option>
-                    <option value="pendiente">Pendientes</option>
-                    <option value="aprobado">Aprobados</option>
-                    <option value="entregado">Entregados</option>
-                    <option value="rechazado">Rechazados</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
-
-                <div className="relative w-full sm:w-40">
-                  <select
-                    value={filterPriority}
-                    onChange={(e) => setFilterPriority(e.target.value)}
-                    className="appearance-none bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-emerald-300 cursor-pointer text-sm w-full transition-all"
-                  >
-                    <option value="todas">Todas las prioridades</option>
-                    <option value="alta">Alta</option>
-                    <option value="media">Media</option>
-                    <option value="baja">Baja</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
-              </div>
-
-              <div className="flex gap-3 flex-wrap">
-                {canManagePedidos && (
-                  <button 
-                    onClick={handleExportarPedidos}
-                    className="flex items-center justify-center gap-2 px-5 py-3 bg-white border border-emerald-100 text-slate-700 rounded-xl transition-all font-semibold shadow-sm text-sm whitespace-nowrap hover:bg-emerald-50"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Exportar</span>
-                  </button>
-                )}
-                <button 
-                  onClick={() => setShowModal(true)}
-                  className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white rounded-xl transition-all font-semibold shadow-md shadow-emerald-500/20 text-sm whitespace-nowrap"
-                >
-                  <Plus className="w-5 h-5" />
-                  <span>Nuevo</span>
-                </button>
-              </div>
-            </div>
+        {!canManage && (
+          <div className="bg-blue-500/10 border border-blue-200 rounded-lg px-4 py-3 text-xs font-mono text-blue-400">
+            Solo se muestran tus pedidos. Puedes crear nuevas solicitudes.
           </div>
+        )}
 
-          {/* Pedidos Table */}
-          <div className="bg-white rounded-xl border border-emerald-100 shadow-md overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-[#f6fff2] border-b border-emerald-100">
-                  <tr>
-                    <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-teal-700">Código</th>
-                    <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-teal-700">Producto</th>
-                    <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-teal-700">Cant.</th>
-                    <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-teal-700">Solicitante</th>
-                    <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-teal-700">Prioridad</th>
-                    <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-teal-700">Estado</th>
-                    <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-teal-700">Fechas</th>
-                    <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-teal-700">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-teal-500/10">
-                  {loading ? (
-                    <tr>
-                      <td colSpan="8" className="py-16 text-center text-slate-500">
-                        <div className="flex justify-center items-center gap-2">
-                          <div className="w-2.5 h-2.5 bg-teal-500 rounded-full animate-bounce"></div>
-                          <div className="w-2.5 h-2.5 bg-teal-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                          <div className="w-2.5 h-2.5 bg-teal-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : filteredPedidos.length === 0 ? (
-                    <tr>
-                      <td colSpan="8" className="py-16 text-center">
-                        <div className="flex flex-col items-center justify-center gap-3">
-                          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-teal-200/30 to-cyan-200/20 flex items-center justify-center">
-                            <ShoppingCart className="w-8 h-8 text-slate-400" />
-                          </div>
-                          <div>
-                            <p className="font-semibold text-slate-700 text-sm">No se encontraron pedidos</p>
-                            <p className="text-xs text-slate-500 mt-1">Intenta ajustar los filtros de búsqueda</p>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredPedidos.map((pedido) => (
-                      <tr key={pedido.id} className="group hover:bg-teal-500/5 transition-all duration-200 border-b border-teal-500/10 hover:border-teal-500/30 last:border-b-0">
-                        <td className="py-5 px-5">
-                          <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-md">
-                            {pedido.codigo}
-                          </span>
-                        </td>
-                        <td className="py-5 px-5">
-                          <p className="font-bold text-slate-900 text-sm">{pedido.producto}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{pedido.departamento}</p>
-                        </td>
-                        <td className="py-5 px-5 text-center">
-                          <span className="inline-flex items-center justify-center w-8 h-8 bg-violet-100 text-violet-700 rounded-lg font-bold text-sm">
-                            {pedido.cantidad}
-                          </span>
-                        </td>
-                        <td className="py-5 px-5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-100 to-violet-50 flex items-center justify-center flex-shrink-0">
-                              <User className="w-4 h-4 text-violet-600" />
-                            </div>
-                            <span className="text-sm text-slate-700 font-medium">{pedido.solicitante}</span>
-                          </div>
-                        </td>
-                        <td className="py-5 px-5 text-center">{getPrioridadBadge(pedido.prioridad)}</td>
-                        <td className="py-5 px-5 text-center">{getEstadoBadge(pedido.estado)}</td>
-                        <td className="py-5 px-5 text-center">
-                          <div className="flex flex-col items-center gap-2 text-xs">
-                            <div className="flex flex-col items-center">
-                              <span className="text-slate-500 font-medium">Solicitud</span>
-                              <span className="font-bold text-slate-700 text-xs">{pedido.fecha_solicitud}</span>
-                            </div>
-                            {pedido.fecha_entrega && (
-                              <div className="flex flex-col items-center border-t border-slate-200 pt-1 mt-1 w-full">
-                                <span className="text-slate-500 font-medium">Entrega</span>
-                                <span className="font-bold text-emerald-600 text-xs">{pedido.fecha_entrega}</span>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-5 px-5">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => showDetalleToast('Detalle del pedido', [
-                                `Código: ${pedido.codigo}`,
-                                `Producto: ${pedido.producto}`,
-                                `Cantidad: ${pedido.cantidad}`,
-                                `Solicitante: ${pedido.solicitante}`,
-                                `Prioridad: ${pedido.prioridad}`,
-                                `Estado: ${pedido.estado}`,
-                                `Observaciones: ${pedido.observaciones || 'Sin observaciones'}`,
-                              ])}
-                              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors hover:text-slate-900"
-                              title="Ver detalles">
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            {canManagePedidos && pedido.estado === 'pendiente' && (
-                              <>
-                                <button 
-                                  onClick={() => handleAprobarPedido(pedido.id)}
-                                  className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors hover:text-emerald-700 hover:shadow-lg hover:shadow-emerald-500/30" 
-                                  title="Aprobar">
-                                  <CheckCircle2 className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  onClick={() => handleRechazarPedido(pedido.id)}
-                                  className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors hover:text-rose-700 hover:shadow-lg hover:shadow-rose-500/30" 
-                                  title="Rechazar">
-                                  <XCircle className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <StatCard label="Total"      value={stats.total}      icon={<ShoppingCart className="w-4 h-4" />} color="blue" />
+          <StatCard label="Pendientes" value={stats.pendientes} icon={<Clock className="w-4 h-4" />}        color="amber" />
+          <StatCard label="Aprobados"  value={stats.aprobados}  icon={<CheckCircle2 className="w-4 h-4" />} color="emerald" />
+          <StatCard label="Rechazados" value={stats.rechazados} icon={<AlertCircle className="w-4 h-4" />}  color="rose" />
+        </div>
+
+        <div className="bg-white border border-[#E0E0E0] rounded-lg p-4">
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+              <input type="text" placeholder="Buscar por producto, solicitante o código..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={`${inputCls} pl-9`} />
+            </div>
+            <div className="relative w-full md:w-44">
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className={`${selectCls} pr-8`}>
+                <option value="todos">Todos los estados</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="aprobado">Aprobado</option>
+                <option value="entregado">Entregado</option>
+                <option value="rechazado">Rechazado</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400 pointer-events-none" />
+            </div>
+            <div className="relative w-full md:w-44">
+              <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className={`${selectCls} pr-8`}>
+                <option value="todas">Todas las prioridades</option>
+                <option value="alta">Alta</option>
+                <option value="media">Media</option>
+                <option value="baja">Baja</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400 pointer-events-none" />
             </div>
           </div>
         </div>
 
-      {/* Modal Nuevo Pedido */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xl flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="sigirl-form-surface rounded-[28px] max-w-2xl w-full animate-in zoom-in duration-300">
-            <div className="p-6 md:p-8 border-b border-teal-500/20 bg-gradient-to-r from-teal-50/50 to-cyan-50/50 backdrop-blur-sm">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg text-white shadow-lg shadow-teal-500/40">
-                  <Plus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent">Nuevo Pedido</h2>
-                  <p className="text-xs md:text-sm text-slate-500 mt-0.5">Complete el formulario para crear una nueva solicitud</p>
-                </div>
-              </div>
-            </div>
-            <div className="p-7 md:p-10 space-y-6">
-              <div>
-                <label className="sigirl-form-label">Producto</label>
-                <select 
-                  value={formPedido.productoId}
-                  onChange={(e) => setFormPedido({...formPedido, productoId: e.target.value})}
-                  className="sigirl-form-control">
-                  <option value="">Seleccionar producto...</option>
-                  {productos.map((p) => (
-                    <option key={p.id} value={p.id}>{p.nombre} (Stock: {p.cantidad})</option>
+        <LabSection title={`SOLICITUDES · ${filteredPedidos.length} resultado${filteredPedidos.length !== 1 ? 's' : ''}`}>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#E0E0E0]">
+                  {['CÓDIGO','PRODUCTO','CANTIDAD','SOLICITANTE','PRIORIDAD','ESTADO','ACCIONES'].map((h) => (
+                    <th key={h} className="pb-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left last:text-center">{h}</th>
                   ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E0E0E0]">
+                {filteredPedidos.length === 0 ? (
+                  <tr><td colSpan={7} className="py-12 text-center"><ShoppingCart className="w-8 h-8 text-stone-600 mx-auto mb-2" /><p className="text-stone-400 font-mono text-sm">No se encontraron pedidos</p></td></tr>
+                ) : filteredPedidos.map((p) => (
+                  <tr key={p.id} className="hover:bg-[#E8F5F0]/60 transition-colors">
+                    <td className="py-3 pr-4 text-xs font-mono text-[#1FA971] font-bold">{p.codigo}</td>
+                    <td className="py-3 pr-4">
+                      <p className="text-sm font-mono font-semibold text-stone-700">{p.producto}</p>
+                      {p.departamento && <p className="text-[10px] font-mono text-stone-400 mt-0.5">{p.departamento}</p>}
+                    </td>
+                    <td className="py-3 pr-4 text-sm font-mono text-stone-600">{p.cantidad}</td>
+                    <td className="py-3 pr-4 text-sm font-mono text-stone-500">{p.solicitante}</td>
+                    <td className="py-3 pr-4">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${PRIORIDAD_STYLES[p.prioridad] || 'bg-stone-100 text-stone-500 border-stone-200'}`}>{p.prioridad}</span>
+                    </td>
+                    <td className="py-3 pr-4"><EstadoBadge estado={p.estado} /></td>
+                    <td className="py-3">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => toast.info(<div className="text-sm font-mono"><p className="font-bold mb-2 text-[#1FA971]">DETALLE PEDIDO</p><div className="space-y-1 text-stone-600"><p>Código: {p.codigo}</p><p>Producto: {p.producto}</p><p>Cantidad: {p.cantidad}</p><p>Solicitante: {p.solicitante}</p><p>Prioridad: {p.prioridad}</p><p>Estado: {p.estado}</p>{p.observaciones && <p>Obs: {p.observaciones}</p>}{p.motivo_rechazo && <p>Rechazo: {p.motivo_rechazo}</p>}</div></div>, { autoClose: 8000 })}
+                          className="p-1.5 text-blue-400 hover:bg-blue-500/10 rounded transition-colors" title="Ver"
+                        ><Eye className="w-3.5 h-3.5" /></button>
+                        {canManage && p.estado === 'pendiente' && (
+                          <>
+                            <button onClick={() => handleAprobarPedido(p.id)} className="p-1.5 text-[#1FA971] hover:bg-[#E8F5F0] rounded transition-colors" title="Aprobar"><CheckCircle2 className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => setPedidoToReject({ id: p.id, codigo: p.codigo, producto: p.producto, solicitante: p.solicitante, motivo: '' })} className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded transition-colors" title="Rechazar"><XCircle className="w-3.5 h-3.5" /></button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 pt-4 border-t border-[#E0E0E0]">
+            <p className="text-[10px] font-mono text-stone-400">Mostrando {filteredPedidos.length} de {visiblePedidos.length} pedidos</p>
+          </div>
+        </LabSection>
+
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white border border-[#E0E0E0] rounded-lg overflow-hidden shadow-2xl shadow-stone-300/60">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0]">
+              <div>
+                <h2 className="text-sm font-mono font-bold text-[#1FA971] uppercase tracking-wider">NUEVO PEDIDO</h2>
+                <p className="text-[10px] font-mono text-stone-500 mt-0.5">Crear una nueva solicitud de reactivo</p>
+              </div>
+              <button onClick={() => setShowModal(false)} className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"><XCircle className="w-4 h-4" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Producto</label>
+                <select value={formPedido.productoId} onChange={(e) => setFormPedido({...formPedido, productoId: e.target.value})} className={selectCls}>
+                  <option value="">Seleccionar producto...</option>
+                  {productos.map((pr) => <option key={pr.id} value={pr.id}>{pr.nombre}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="sigirl-form-label">Cantidad</label>
-                  <input 
-                    type="number" 
-                    value={formPedido.cantidad}
-                    onChange={(e) => setFormPedido({...formPedido, cantidad: e.target.value})}
-                    className="sigirl-form-control" 
-                    placeholder="0" 
-                    min="1" 
-                  />
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Cantidad</label>
+                  <input type="number" min="1" value={formPedido.cantidad} onChange={(e) => setFormPedido({...formPedido, cantidad: e.target.value})} className={inputCls} placeholder="0" />
                 </div>
                 <div>
-                  <label className="sigirl-form-label">Prioridad</label>
-                  <select 
-                    value={formPedido.prioridad}
-                    onChange={(e) => setFormPedido({...formPedido, prioridad: e.target.value})}
-                    className="sigirl-form-control">
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Prioridad</label>
+                  <select value={formPedido.prioridad} onChange={(e) => setFormPedido({...formPedido, prioridad: e.target.value})} className={selectCls}>
                     <option value="baja">Baja</option>
                     <option value="media">Media</option>
                     <option value="alta">Alta</option>
@@ -536,32 +305,26 @@ const Pedidos = () => {
                 </div>
               </div>
               <div>
-                <label className="sigirl-form-label">Observaciones</label>
-                <textarea 
-                  value={formPedido.observaciones}
-                  onChange={(e) => setFormPedido({...formPedido, observaciones: e.target.value})}
-                  className="sigirl-form-control sigirl-form-textarea text-sm" 
-                  placeholder="Detalles adicionales...">
-                </textarea>
+                <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Observaciones</label>
+                <textarea rows={3} value={formPedido.observaciones} onChange={(e) => setFormPedido({...formPedido, observaciones: e.target.value})} className={`${inputCls} resize-none`} placeholder="Opcional..." />
               </div>
             </div>
-            <div className="p-6 md:p-8 border-t border-teal-500/20 bg-gradient-to-r from-teal-50/30 to-cyan-50/30 backdrop-blur-sm rounded-b-[28px] flex flex-col-reverse sm:flex-row gap-3 justify-end">
-              <button 
-                onClick={() => setShowModal(false)}
-                className="sigirl-btn-secondary text-sm w-full sm:w-auto"
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={handleGuardarPedido}
-                className="sigirl-btn-primary text-sm w-full sm:w-auto"
-              >
-                Crear pedido
-              </button>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+              <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors">Cancelar</button>
+              <button onClick={handleGuardarPedido} className="px-4 py-2 rounded text-xs font-mono font-bold bg-[#1FA971] text-white hover:bg-[#157A55] transition-colors shadow-sm">Crear pedido</button>
             </div>
           </div>
         </div>
       )}
+
+      <RejectPedidoModal
+        open={Boolean(pedidoToReject)}
+        pedido={pedidoToReject}
+        motivo={pedidoToReject?.motivo || ''}
+        onChangeMotivo={(motivo) => setPedidoToReject((prev) => prev ? { ...prev, motivo } : prev)}
+        onClose={() => setPedidoToReject(null)}
+        onConfirm={() => pedidoToReject && handleRechazarPedido(pedidoToReject.id)}
+      />
     </Layout>
   );
 };

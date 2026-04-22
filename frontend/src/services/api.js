@@ -63,11 +63,15 @@ export const deletePedido = (id)       => api.delete(`pedidos/${id}/`);
 export const getAlertas   = ()         => api.get('alertas/');
 export const createAlerta = (data)     => api.post('alertas/', data);
 export const updateAlerta = (id, data) => api.patch(`alertas/${id}/`, data);
+export const deleteAlerta = (id)       => api.delete(`alertas/${id}/`);
 
 // ── Usuarios (gestión staff) ───────────────────────────────
 export const getUsuarios   = ()         => api.get('usuarios/');
 export const createUsuario = (data)     => api.post('usuarios/', data);
 export const updateUsuario = (id, data) => api.patch(`usuarios/${id}/`, data);
 export const deleteUsuario = (id)       => api.delete(`usuarios/${id}/`);
+
+// ── Auditoría ──────────────────────────────────────────────
+export const getAuditoria = (params = {}) => api.get('auditoria/', { params });
 
 export default api;

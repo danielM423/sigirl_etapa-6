@@ -1,97 +1,126 @@
-// Panel principal del administrador.
-// Permite gestionar inventario, pedidos, alertas y reportes.
+﻿// Panel principal del administrador - Estilo Laboratorio Oscuro
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { useSearchParams } from 'react-router-dom';
-import { Search, ChevronDown, Plus, Edit2, Trash2, Package, AlertCircle, TrendingUp, XCircle, CheckCircle2, Eye } from 'lucide-react';
+import {
+  Search, ChevronDown, Plus, Edit2, Trash2, Package, AlertCircle,
+  TrendingUp, XCircle, CheckCircle2, Eye, FlaskConical, Download,
+  Bell, Shield
+} from 'lucide-react';
 import Layout from '../components/Layout';
 import ReportPanel from '../components/ReportPanel';
+import RejectPedidoModal from '../components/RejectPedidoModal';
 import { exportToExcel, exportToPdf } from '../utils/reportExport';
 import {
   getProductos, createProducto, updateProducto, deleteProducto,
   getPedidos, updatePedido,
-  getAlertas, createAlerta, updateAlerta,
+  getAlertas, createAlerta, updateAlerta, deleteAlerta,
 } from '../services/api';
 
-// ============================================================
-// FUNCIONES DE NORMALIZACIÓN
-// ============================================================
-// Convierte los datos de la API al formato que espera el frontend
-// La API puede devolver categoria_nombre o categoria, esta función unifica
 const normalizeProducto = (p) => ({
   ...p,
   categoria: p.categoria_nombre || String(p.categoria || ''),
   umbral_minimo: p.umbral_minimo ?? p.minimo ?? 0,
 });
 
-// Normaliza el nombre del producto en los pedidos
 const normalizePedido = (p) => ({
   ...p,
   producto: p.producto_nombre || p.producto,
 });
 
-// ============================================================
-// COMPONENTE PRINCIPAL
-// ============================================================
+// ─── Badge helpers ────────────────────────────────────────────────
+const ESTADO_STYLES = {
+  ok:         'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25',
+  bajo_stock: 'bg-amber-100  text-amber-400  border border-amber-200',
+  agotado:    'bg-rose-100   text-rose-400   border border-rose-200',
+  pendiente:  'bg-amber-100  text-amber-400  border border-amber-200',
+  aprobado:   'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25',
+  rechazado:  'bg-rose-100   text-rose-400   border border-rose-200',
+};
+const ESTADO_LABELS = {
+  ok: 'OK', bajo_stock: 'Bajo stock', agotado: 'Agotado',
+  pendiente: 'Pendiente', aprobado: 'Aprobado', rechazado: 'Rechazado',
+};
+const EstadoBadge = ({ estado }) => (
+  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${ESTADO_STYLES[estado] || 'bg-stone-100 text-stone-500 border border-stone-200'}`}>
+    <span className={`w-1.5 h-1.5 rounded-full ${estado === 'aprobado' || estado === 'ok' ? 'bg-emerald-400 animate-pulse' : estado === 'rechazado' || estado === 'agotado' ? 'bg-rose-400' : 'bg-amber-400'}`} />
+    {ESTADO_LABELS[estado] || estado}
+  </span>
+);
+
+// ─── Input/Select dark helpers ────────────────────────────────────
+const inputCls = 'w-full bg-stone-50 border border-[#E0E0E0] rounded-md px-3 py-2.5 text-sm font-mono text-stone-700 placeholder-stone-400 focus:outline-none focus:border-emerald-500 transition-colors';
+const selectCls = `${inputCls} appearance-none cursor-pointer`;
+
+// ─── Stat card ────────────────────────────────────────────────────
+const StatCard = ({ label, value, icon, color = 'emerald' }) => {
+  const colors = {
+    emerald: 'border-[#1FA971]/25 text-[#1FA971] bg-[#E8F5F0]',
+    amber:   'border-amber-200  text-amber-400  bg-amber-500/10',
+    rose:    'border-rose-200   text-rose-400   bg-rose-500/10',
+    blue:    'border-blue-200   text-blue-400   bg-blue-500/10',
+  };
+  return (
+    <div className="bg-white border border-[#E0E0E0] rounded-lg p-4 hover:border-[#1FA971]/35 transition-colors">
+      <div className="flex items-start justify-between">
+        <div>
+          <span className="text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider">{label}</span>
+          <p className={`text-3xl font-bold font-mono mt-1 ${colors[color].split(' ')[1]}`}>{value}</p>
+        </div>
+        <div className={`p-2 rounded-md border ${colors[color]}`}>{icon}</div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Section wrapper ──────────────────────────────────────────────
+const LabSection = ({ title, children, action, onAction }) => (
+  <div className="bg-white border border-[#E0E0E0] rounded-lg overflow-hidden">
+    <div className="flex items-center justify-between px-5 py-3 border-b border-[#E0E0E0]">
+      <span className="text-xs font-mono font-bold text-[#1FA971] uppercase tracking-wider">{title}</span>
+      {action && (
+        <button onClick={onAction} className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-mono font-bold text-[#1FA971] bg-[#E8F5F0] border border-[#1FA971]/25 hover:bg-[#E8F5F0] transition-colors">
+          {action}
+        </button>
+      )}
+    </div>
+    <div className="p-5">{children}</div>
+  </div>
+);
+
 const AdminDashboard = () => {
-  // ============================================================
-  // ESTADOS PRINCIPALES
-  // ============================================================
-  const [searchParams, setSearchParams] = useSearchParams();     // Lee/escribe parámetros URL (?tab=pedidos)
-  const [productos, setProductos] = useState([]);               // Lista de productos del inventario
-  const [pedidos, setPedidos] = useState([]);                   // Lista de pedidos
-  const [loading, setLoading] = useState(true);                 // Indica si los datos están cargando
-  const [alertas, setAlertas] = useState([]);                   // Lista de alertas del sistema
-  
-  // Pestaña activa: 'inventario', 'pedidos' o 'alertas' (por defecto 'inventario')
-  const activeTab = ['pedidos', 'alertas'].includes(searchParams.get('tab')) 
-    ? searchParams.get('tab') 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [productos, setProductos] = useState([]);
+  const [pedidos, setPedidos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [alertas, setAlertas] = useState([]);
+
+  const activeTab = ['pedidos', 'alertas'].includes(searchParams.get('tab'))
+    ? searchParams.get('tab')
     : 'inventario';
 
-  // ============================================================
-  // ESTADOS DE BÚSQUEDA Y FILTROS
-  // ============================================================
-  const [searchTerm, setSearchTerm] = useState('');              // Búsqueda en pedidos
-  const [inventorySearchTerm, setInventorySearchTerm] = useState(''); // Búsqueda en inventario
-  const [inventoryCategory, setInventoryCategory] = useState('todas'); // Filtro por categoría en inventario
-  const [alertPriorityFilter, setAlertPriorityFilter] = useState('todas'); // Filtro por prioridad de alertas
-  const [filterStatus, setFilterStatus] = useState('todos');     // Filtro por estado de pedidos
-  const [dateFrom, setDateFrom] = useState('');                  // Filtro fecha inicio para pedidos
-  const [dateTo, setDateTo] = useState('');                      // Filtro fecha fin para pedidos
+  const [searchTerm, setSearchTerm] = useState('');
+  const [inventorySearchTerm, setInventorySearchTerm] = useState('');
+  const [inventoryCategory, setInventoryCategory] = useState('todas');
+  const [alertPriorityFilter, setAlertPriorityFilter] = useState('todas');
+  const [filterStatus, setFilterStatus] = useState('todos');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
-  // ============================================================
-  // ESTADOS PARA MODAL Y FORMULARIOS
-  // ============================================================
-  const [selectedProduct, setSelectedProduct] = useState(null);  // Producto que se está editando
-  const [showModalInventario, setShowModalInventario] = useState(false); // Controla visibilidad del modal
-  const [formProducto, setFormProducto] = useState({             // Datos del formulario de producto
-    nombre: '',
-    categoria: 'Solventes',
-    ubicacion: '',
-    cantidad: '',
-    umbral_minimo: ''
-  });
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [showModalInventario, setShowModalInventario] = useState(false);
+  const [formProducto, setFormProducto] = useState({ nombre: '', categoria: 'Solventes', ubicacion: '', cantidad: '', umbral_minimo: '' });
 
-  // ============================================================
-  // FUNCIÓN: Cambiar pestaña activa
-  // ============================================================
-  const changeTab = (tab) => {
-    setSearchParams({ tab });  // Actualiza la URL para mantener el estado
-  };
+  const [showModalAlerta, setShowModalAlerta] = useState(false);
+  const [formAlerta, setFormAlerta] = useState({ titulo: '', descripcion: '', prioridad: 'media', remitente: 'Admin' });
+  const [pedidoToReject, setPedidoToReject] = useState(null);
 
-  // ============================================================
-  // EFECTO: Carga inicial de datos
-  // ============================================================
+  const changeTab = (tab) => setSearchParams({ tab });
+
   useEffect(() => {
     const hydrate = async () => {
       try {
-        // Carga productos, pedidos y alertas en paralelo (más eficiente)
-        const [prodRes, pedRes, alertRes] = await Promise.all([
-          getProductos(),
-          getPedidos(),
-          getAlertas(),
-        ]);
-        // Normaliza y guarda los datos en los estados
+        const [prodRes, pedRes, alertRes] = await Promise.all([getProductos(), getPedidos(), getAlertas()]);
         setProductos((prodRes.data.results ?? prodRes.data).map(normalizeProducto));
         setPedidos((pedRes.data.results ?? pedRes.data).map(normalizePedido));
         setAlertas(alertRes.data.results ?? alertRes.data);
@@ -99,484 +128,241 @@ const AdminDashboard = () => {
         toast.error('Error al cargar datos del servidor');
         console.error(err);
       } finally {
-        setLoading(false);  // Termina el estado de carga
+        setLoading(false);
       }
     };
     hydrate();
-  }, []);  // El array vacío significa que solo se ejecuta al montar el componente
+  }, []);
 
-  // ============================================================
-  // MANEJO DE PEDIDOS
-  // ============================================================
-  
-  // Rechazar un pedido: solicita motivo y actualiza en API
   const handleRechazarPedido = async (id) => {
-    const motivo = prompt('¿Cuál es el motivo del rechazo?');
-    if (motivo === null) return;
-    if (!motivo.trim()) {
-      toast.error('Debes indicar un motivo de rechazo');
-      return;
-    }
+    const motivo = String(pedidoToReject?.motivo || '').trim();
+    if (!motivo.trim()) { toast.error('Debes indicar un motivo de rechazo'); return; }
     try {
       const { data } = await updatePedido(id, { estado: 'rechazado', motivo_rechazo: motivo });
       setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(data) : p));
-      toast.success('Pedido rechazado exitosamente');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Error al rechazar pedido');
-    }
+      setPedidoToReject(null);
+      toast.success('Pedido rechazado');
+    } catch (err) { toast.error(err.response?.data?.error || 'Error al rechazar pedido'); }
   };
 
-  // Aprobar un pedido: si es reactivo crítico, genera alerta automática
   const handleAprobarPedido = async (id) => {
     try {
       const pedido = pedidos.find((p) => p.id === id);
       const { data } = await updatePedido(id, { estado: 'aprobado' });
       setPedidos((prev) => prev.map((p) => p.id === id ? normalizePedido(data) : p));
-
-      // Si el pedido contiene un reactivo crítico, crear alerta automática
       if (pedido?.evaluacion_seguridad?.reactivoCritico) {
-        createAlerta({
-          tipo: 'autorizacion',
-          titulo: `Reactivo autorizado: ${pedido.producto}`,
-          descripcion: `El administrador autorizó la solicitud de ${pedido.solicitante}.`,
-          remitente: 'Administrador',
-          prioridad: 'media',
-        }).then(({ data: alerta }) => setAlertas((prev) => [alerta, ...prev])).catch(() => {});
+        createAlerta({ tipo: 'autorizacion', titulo: `Reactivo autorizado: ${pedido.producto}`, descripcion: `Admin autorizó solicitud de ${pedido.solicitante}.`, remitente: 'Administrador', prioridad: 'media' })
+          .then(({ data: a }) => setAlertas((prev) => [a, ...prev])).catch(() => {});
       }
-
-      toast.success('Pedido aprobado exitosamente');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Error al aprobar pedido');
-    }
+      toast.success('Pedido aprobado');
+    } catch (err) { toast.error(err.response?.data?.error || 'Error al aprobar pedido'); }
   };
 
-  // ============================================================
-  // MANEJO DE PRODUCTOS (CRUD)
-  // ============================================================
-  
-  // Reinicia el formulario de producto a sus valores por defecto
   const resetFormProducto = () => {
-    setFormProducto({
-      nombre: '',
-      categoria: 'Solventes',
-      ubicacion: '',
-      cantidad: '',
-      umbral_minimo: ''
-    });
+    setFormProducto({ nombre: '', categoria: 'Solventes', ubicacion: '', cantidad: '', umbral_minimo: '' });
     setSelectedProduct(null);
   };
 
-  // Abre el modal para crear un nuevo producto
-  const handleNuevoProducto = () => {
-    resetFormProducto();
+  const handleNuevoProducto = () => { resetFormProducto(); setShowModalInventario(true); };
+
+  const handleEditarProducto = (p) => {
+    setSelectedProduct(p);
+    setFormProducto({ nombre: p.nombre, categoria: p.categoria, ubicacion: p.ubicacion, cantidad: String(p.cantidad), umbral_minimo: String(p.umbral_minimo) });
     setShowModalInventario(true);
   };
 
-  // Abre el modal para editar un producto existente
-  const handleEditarProducto = (producto) => {
-    setSelectedProduct(producto);
-    setFormProducto({
-      nombre: producto.nombre,
-      categoria: producto.categoria,
-      ubicacion: producto.ubicacion,
-      cantidad: String(producto.cantidad),
-      umbral_minimo: String(producto.umbral_minimo)
-    });
-    setShowModalInventario(true);
-  };
-
-  // Guarda producto (crea o actualiza según si hay selectedProduct)
   const handleGuardarProducto = async () => {
-    // Validaciones
-    if (!formProducto.nombre.trim() || !formProducto.ubicacion.trim()) {
-      toast.error('Completa el nombre y la ubicación del producto');
-      return;
-    }
-    if (formProducto.cantidad === '' || formProducto.umbral_minimo === '') {
-      toast.error('Completa la cantidad y el umbral mínimo');
-      return;
-    }
-    if (Number(formProducto.cantidad) < 0 || Number(formProducto.umbral_minimo) < 0) {
-      toast.error('Las cantidades no pueden ser negativas');
-      return;
-    }
-
-    const payload = {
-      nombre: formProducto.nombre.trim(),
-      categoria_texto: formProducto.categoria,
-      ubicacion: formProducto.ubicacion.trim(),
-      cantidad: Number(formProducto.cantidad),
-      umbral_minimo: Number(formProducto.umbral_minimo),
-      tipo: 'reactivo',
-    };
-
+    if (!formProducto.nombre.trim() || !formProducto.ubicacion.trim()) { toast.error('Completa nombre y ubicación'); return; }
+    if (formProducto.cantidad === '' || formProducto.umbral_minimo === '') { toast.error('Completa cantidad y umbral mínimo'); return; }
+    if (Number(formProducto.cantidad) < 0 || Number(formProducto.umbral_minimo) < 0) { toast.error('Las cantidades no pueden ser negativas'); return; }
+    const payload = { nombre: formProducto.nombre.trim(), categoria_texto: formProducto.categoria, ubicacion: formProducto.ubicacion.trim(), cantidad: Number(formProducto.cantidad), umbral_minimo: Number(formProducto.umbral_minimo), tipo: 'reactivo' };
     try {
       if (selectedProduct) {
-        // Actualizar producto existente
         const { data } = await updateProducto(selectedProduct.id, payload);
         setProductos((prev) => prev.map((p) => p.id === selectedProduct.id ? normalizeProducto(data) : p));
-        toast.success('Producto actualizado exitosamente');
+        toast.success('Producto actualizado');
       } else {
-        // Crear nuevo producto
         const { data } = await createProducto(payload);
         setProductos((prev) => [normalizeProducto(data), ...prev]);
-        toast.success('Producto creado exitosamente');
+        toast.success('Producto creado');
       }
-      setShowModalInventario(false);
-      resetFormProducto();
+      setShowModalInventario(false); resetFormProducto();
     } catch (err) {
       const msg = err.response?.data;
-      const detail = typeof msg === 'object' ? Object.values(msg).flat().join(' ') : (msg || 'Error al guardar producto');
-      toast.error(detail);
+      toast.error(typeof msg === 'object' ? Object.values(msg).flat().join(' ') : (msg || 'Error al guardar'));
     }
   };
 
-  // Eliminar un producto del inventario
   const handleEliminarProducto = async (id) => {
-    const producto = productos.find((p) => p.id === id);
-    if (!producto) return;
-    if (!window.confirm(`¿Eliminar ${producto.nombre} del inventario?`)) return;
-
-    try {
-      await deleteProducto(id);
-      setProductos((prev) => prev.filter((p) => p.id !== id));
-      toast.success('Producto eliminado exitosamente');
-    } catch (err) {
-      toast.error('Error al eliminar el producto');
-    }
+    const p = productos.find((x) => x.id === id);
+    if (!p || !window.confirm(`¿Eliminar ${p.nombre}?`)) return;
+    try { await deleteProducto(id); setProductos((prev) => prev.filter((x) => x.id !== id)); toast.success('Producto eliminado'); }
+    catch { toast.error('Error al eliminar el producto'); }
   };
 
-  // ============================================================
-  // MANEJO DE ALERTAS
-  // ============================================================
-  
-  // Marcar una alerta como resuelta
   const handleResolverAlerta = async (id) => {
     try {
       const { data } = await updateAlerta(id, { resuelta: true });
       setAlertas((prev) => prev.map((a) => a.id === id ? data : a));
-      toast.success('Alerta marcada como resuelta');
-    } catch (err) {
-      toast.error('Error al resolver la alerta');
-    }
+      toast.success('Alerta resuelta');
+    } catch { toast.error('Error al resolver la alerta'); }
   };
 
-  // ============================================================
-  // FUNCIONES DE VISUALIZACIÓN Y UTILIDADES
-  // ============================================================
-  
-  // Muestra un modal con los detalles completos de un pedido
+  const handleCrearAlerta = async () => {
+    if (!formAlerta.titulo.trim()) { toast.error('El título es requerido'); return; }
+    try {
+      const { data } = await createAlerta({ ...formAlerta, estado: 'nueva' });
+      setAlertas((prev) => [...prev, data]);
+      setFormAlerta({ titulo: '', descripcion: '', prioridad: 'media', remitente: 'Admin' });
+      setShowModalAlerta(false);
+      toast.success('Alerta creada');
+    } catch { toast.error('Error al crear la alerta'); }
+  };
+
+  const handleEliminarAlerta = async (id) => {
+    if (!window.confirm('¿Eliminar esta alerta?')) return;
+    try {
+      await deleteAlerta(id);
+      setAlertas((prev) => prev.filter((a) => a.id !== id));
+      toast.success('Alerta eliminada');
+    } catch { toast.error('Error al eliminar la alerta'); }
+  };
+
   const handleVerPedido = (pedido) => {
-    const detalle = [
-      `Código: ${pedido.codigo}`,
-      `Solicitante: ${pedido.solicitante}`,
-      `Producto: ${pedido.producto}`,
-      `Cantidad: ${pedido.cantidad}`,
-      `Departamento: ${pedido.departamento}`,
-      `Prioridad: ${pedido.prioridad}`,
-      `Estado: ${pedido.estado}`,
+    const lines = [
+      `Código: ${pedido.codigo}`, `Solicitante: ${pedido.solicitante}`,
+      `Producto: ${pedido.producto}`, `Cantidad: ${pedido.cantidad}`,
+      `Departamento: ${pedido.departamento}`, `Estado: ${pedido.estado}`,
       pedido.evaluacion_seguridad?.reactivoCritico ? `Puntaje seguridad: ${pedido.evaluacion_seguridad.puntaje}/${pedido.evaluacion_seguridad.puntajeMinimo}` : null,
       pedido.observaciones ? `Observaciones: ${pedido.observaciones}` : null,
-      pedido.motivo_rechazo ? `Motivo de rechazo: ${pedido.motivo_rechazo}` : null,
+      pedido.motivo_rechazo ? `Motivo rechazo: ${pedido.motivo_rechazo}` : null,
     ].filter(Boolean);
-
-    toast.info(
-      <div className="text-sm">
-        <p className="font-semibold mb-2">Detalle del pedido</p>
-        <div className="space-y-1">{detalle.map((line, index) => <p key={index}>{line}</p>)}</div>
-      </div>,
-      { autoClose: 8000, closeOnClick: false }
-    );
+    toast.info(<div className="text-sm font-mono"><p className="font-bold mb-2 text-[#1FA971]">DETALLE PEDIDO</p><div className="space-y-1">{lines.map((l, i) => <p key={i} className="text-stone-600">{l}</p>)}</div></div>, { autoClose: 8000 });
   };
 
-  // Devuelve un componente badge con el estilo según el estado
-  const getEstadoBadge = (estado) => {
-    const styles = {
-      ok: 'bg-emerald-100 text-emerald-700 border border-emerald-300',
-      bajo_stock: 'bg-amber-100 text-amber-700 border border-amber-300',
-      agotado: 'bg-rose-100 text-rose-700 border border-rose-300',
-      pendiente: 'bg-blue-100 text-blue-700 border border-blue-300',
-      aprobado: 'bg-emerald-100 text-emerald-700 border border-emerald-300',
-      rechazado: 'bg-rose-100 text-rose-700 border border-rose-300'
-    };
-
-    const icons = {
-      ok: '✅',
-      bajo_stock: '⚠️',
-      agotado: '❌',
-      pendiente: '⏳',
-      aprobado: '✅',
-      rechazado: '❌'
-    };
-
-    const labels = {
-      ok: 'OK',
-      bajo_stock: 'Bajo Stock',
-      agotado: 'Agotado',
-      pendiente: 'Pendiente',
-      aprobado: 'Aprobado',
-      rechazado: 'Rechazado'
-    };
-
-    return (
-      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${styles[estado]}`}>
-        {icons[estado]}
-        {labels[estado]}
-      </span>
-    );
-  };
-
-  // ============================================================
-  // FILTROS PARA CADA SECCIÓN
-  // ============================================================
-  
-  // Filtro de pedidos: búsqueda, estado, fechas
-  const filteredPedidos = pedidos.filter(pedido => {
-    const matchesSearch = pedido.producto.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         pedido.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         pedido.solicitante.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === 'todos' || pedido.estado === filterStatus;
-    const matchesFrom = !dateFrom || (pedido.fecha_solicitud || '') >= dateFrom;
-    const matchesTo = !dateTo || (pedido.fecha_solicitud || '') <= dateTo;
-    return matchesSearch && matchesFilter && matchesFrom && matchesTo;
+  // Filtros
+  const filteredPedidos = pedidos.filter((p) => {
+    const t = searchTerm.toLowerCase();
+    return (p.producto.toLowerCase().includes(t) || p.codigo.toLowerCase().includes(t) || p.solicitante.toLowerCase().includes(t))
+      && (filterStatus === 'todos' || p.estado === filterStatus)
+      && (!dateFrom || (p.fecha_solicitud || '') >= dateFrom)
+      && (!dateTo || (p.fecha_solicitud || '') <= dateTo);
   });
 
-  // Obtiene categorías únicas para el filtro de inventario
-  const categoriasDisponibles = ['todas', ...new Set(productos.map((producto) => producto.categoria).filter(Boolean))];
+  const categoriasDisponibles = ['todas', ...new Set(productos.map((p) => p.categoria).filter(Boolean))];
 
-  // Filtro de productos: búsqueda y categoría
-  const filteredProductos = productos.filter((producto) => {
-    const text = inventorySearchTerm.toLowerCase();
-    const matchesSearch =
-      producto.nombre.toLowerCase().includes(text) ||
-      producto.categoria.toLowerCase().includes(text) ||
-      producto.ubicacion.toLowerCase().includes(text);
-    const matchesCategory = inventoryCategory === 'todas' || producto.categoria === inventoryCategory;
-    return matchesSearch && matchesCategory;
+  const filteredProductos = productos.filter((p) => {
+    const t = inventorySearchTerm.toLowerCase();
+    return (p.nombre.toLowerCase().includes(t) || p.categoria.toLowerCase().includes(t) || p.ubicacion.toLowerCase().includes(t))
+      && (inventoryCategory === 'todas' || p.categoria === inventoryCategory);
   });
 
-  // Filtro de alertas: por prioridad
-  const filteredAlertas = alertas.filter((alerta) => alertPriorityFilter === 'todas' || alerta.prioridad === alertPriorityFilter);
+  const filteredAlertas = alertas.filter((a) => alertPriorityFilter === 'todas' || a.prioridad === alertPriorityFilter);
 
-  // ============================================================
-  // ESTADÍSTICAS PARA REPORTES
-  // ============================================================
-  
-  const statsPedidos = {
-    total: pedidos.length,
-    pendientes: pedidos.filter(p => p.estado === 'pendiente').length,
-    aprobados: pedidos.filter(p => p.estado === 'aprobado').length,
-    rechazados: pedidos.filter(p => p.estado === 'rechazado').length
-  };
+  const statsPedidos = { total: pedidos.length, pendientes: pedidos.filter(p=>p.estado==='pendiente').length, aprobados: pedidos.filter(p=>p.estado==='aprobado').length, rechazados: pedidos.filter(p=>p.estado==='rechazado').length };
+  const statsAlertas = { total: alertas.length, nuevas: alertas.filter(a=>a.estado==='nueva').length, altas: alertas.filter(a=>a.prioridad==='alta').length };
 
-  const statsAlertas = {
-    total: alertas.length,
-    nuevas: alertas.filter((alerta) => alerta.estado === 'nueva').length,
-    altas: alertas.filter((alerta) => alerta.prioridad === 'alta').length,
-  };
-
-  // Datos para gráficos según la pestaña activa
   const reportPrimaryData = activeTab === 'inventario'
-    ? [
-        { name: 'OK', value: productos.filter((p) => p.estado === 'ok').length },
-        { name: 'Bajo stock', value: productos.filter((p) => p.estado === 'bajo_stock').length },
-        { name: 'Agotados', value: productos.filter((p) => p.estado === 'agotado').length },
-      ]
+    ? [{ name:'OK', value:productos.filter(p=>p.estado==='ok').length },{ name:'Bajo stock', value:productos.filter(p=>p.estado==='bajo_stock').length },{ name:'Agotados', value:productos.filter(p=>p.estado==='agotado').length }]
     : activeTab === 'pedidos'
-      ? [
-          { name: 'Pendientes', value: statsPedidos.pendientes },
-          { name: 'Aprobados', value: statsPedidos.aprobados },
-          { name: 'Rechazados', value: statsPedidos.rechazados },
-        ]
-      : [
-          { name: 'Nuevas', value: statsAlertas.nuevas },
-          { name: 'Resueltas', value: alertas.filter((item) => item.estado === 'resuelta').length },
-          { name: 'Prioridad alta', value: statsAlertas.altas },
-        ];
+    ? [{ name:'Pendientes', value:statsPedidos.pendientes },{ name:'Aprobados', value:statsPedidos.aprobados },{ name:'Rechazados', value:statsPedidos.rechazados }]
+    : [{ name:'Nuevas', value:statsAlertas.nuevas },{ name:'Resueltas', value:alertas.filter(a=>a.estado==='resuelta').length },{ name:'Alta prioridad', value:statsAlertas.altas }];
 
   const reportSecondaryData = activeTab === 'inventario'
-    ? Object.entries(filteredProductos.reduce((acc, item) => {
-        acc[item.categoria] = (acc[item.categoria] || 0) + 1;
-        return acc;
-      }, {})).map(([name, value]) => ({ name, value }))
+    ? Object.entries(filteredProductos.reduce((acc,p)=>{ acc[p.categoria]=(acc[p.categoria]||0)+1; return acc; },{})).map(([name,value])=>({name,value}))
     : activeTab === 'pedidos'
-      ? Object.entries(filteredPedidos.reduce((acc, item) => {
-          acc[item.prioridad] = (acc[item.prioridad] || 0) + 1;
-          return acc;
-        }, {})).map(([name, value]) => ({ name, value }))
-      : Object.entries(filteredAlertas.reduce((acc, item) => {
-          acc[item.prioridad] = (acc[item.prioridad] || 0) + 1;
-          return acc;
-        }, {})).map(([name, value]) => ({ name, value }));
+    ? Object.entries(filteredPedidos.reduce((acc,p)=>{ acc[p.prioridad]=(acc[p.prioridad]||0)+1; return acc; },{})).map(([name,value])=>({name,value}))
+    : Object.entries(filteredAlertas.reduce((acc,a)=>{ acc[a.prioridad]=(acc[a.prioridad]||0)+1; return acc; },{})).map(([name,value])=>({name,value}));
 
-  // Actividad reciente (últimos pedidos y alertas)
   const activityItems = [
-    ...pedidos.slice(0, 5).map((pedido) => ({
-      id: `pedido-${pedido.id}`,
-      title: `${pedido.codigo} · ${pedido.estado}`,
-      detail: `${pedido.solicitante} solicitó ${pedido.producto} (${pedido.cantidad})`,
-      date: pedido.fecha_respuesta || pedido.fecha_solicitud,
-    })),
-    ...alertas.slice(0, 3).map((alerta) => ({
-      id: `alerta-${alerta.id}`,
-      title: alerta.titulo,
-      detail: alerta.descripcion,
-      date: alerta.fecha,
-    })),
-  ].slice(0, 7);
+    ...pedidos.slice(0,5).map(p=>({ id:`pedido-${p.id}`, title:`${p.codigo} · ${p.estado}`, detail:`${p.solicitante} solicitó ${p.producto} (${p.cantidad})`, date:p.fecha_respuesta||p.fecha_solicitud })),
+    ...alertas.slice(0,3).map(a=>({ id:`alerta-${a.id}`, title:a.titulo, detail:a.descripcion, date:a.fecha })),
+  ].slice(0,7);
 
-  // ============================================================
-  // EXPORTACIÓN DE REPORTES
-  // ============================================================
-  
-  // Exporta los datos actuales a Excel
   const handleExportExcel = () => {
     if (activeTab === 'inventario') {
-      exportToExcel(
-        filteredProductos.map((item) => ({
-          producto: item.nombre,
-          categoria: item.categoria,
-          cantidad: item.cantidad,
-          umbral_minimo: item.umbral_minimo,
-          ubicacion: item.ubicacion,
-          estado: item.estado,
-          recomendacion: item.estado === 'agotado' ? 'Reposición inmediata' : item.estado === 'bajo_stock' ? 'Planificar compra' : 'Stock estable',
-        })),
-        'inventario-sigirl.xlsx'
-      );
+      exportToExcel(filteredProductos.map(i=>({ producto:i.nombre, categoria:i.categoria, cantidad:i.cantidad, umbral_minimo:i.umbral_minimo, ubicacion:i.ubicacion, estado:i.estado })), 'inventario-sigirl.xlsx');
     } else if (activeTab === 'pedidos') {
-      exportToExcel(
-        filteredPedidos.map((item) => ({
-          codigo: item.codigo,
-          solicitante: item.solicitante,
-          producto: item.producto,
-          cantidad: item.cantidad,
-          prioridad: item.prioridad,
-          estado: item.estado,
-          fecha_solicitud: item.fecha_solicitud,
-          fecha_respuesta: item.fecha_respuesta || 'Pendiente',
-        })),
-        'pedidos-sigirl.xlsx'
-      );
+      exportToExcel(filteredPedidos.map(i=>({ codigo:i.codigo, solicitante:i.solicitante, producto:i.producto, cantidad:i.cantidad, prioridad:i.prioridad, estado:i.estado, fecha_solicitud:i.fecha_solicitud })), 'pedidos-sigirl.xlsx');
     } else {
-      exportToExcel(
-        filteredAlertas.map((item) => ({
-          alerta: item.titulo,
-          remitente: item.remitente,
-          prioridad: item.prioridad,
-          estado: item.estado,
-          descripcion: item.descripcion,
-        })),
-        'alertas-sigirl.xlsx'
-      );
+      exportToExcel(filteredAlertas.map(i=>({ alerta:i.titulo, remitente:i.remitente, prioridad:i.prioridad, estado:i.estado, descripcion:i.descripcion })), 'alertas-sigirl.xlsx');
     }
     toast.success('Reporte exportado a Excel');
   };
 
-  // Exporta los datos actuales a PDF
   const handleExportPdf = () => {
-    const isInventory = activeTab === 'inventario';
-    const isPedidos = activeTab === 'pedidos';
-
+    const isInv = activeTab === 'inventario', isPed = activeTab === 'pedidos';
     exportToPdf({
-      title: isInventory ? 'Reporte de Inventario SIGIRL' : isPedidos ? 'Reporte de Pedidos SIGIRL' : 'Reporte de Alertas SIGIRL',
-      headers: isInventory
-        ? ['Producto', 'Categoría', 'Cantidad', 'Ubicación', 'Estado']
-        : isPedidos
-          ? ['Código', 'Solicitante', 'Producto', 'Cantidad', 'Estado']
-          : ['Alerta', 'Remitente', 'Prioridad', 'Estado'],
-      rows: isInventory
-        ? filteredProductos.map((item) => [item.nombre, item.categoria, item.cantidad, item.ubicacion, item.estado])
-        : isPedidos
-          ? filteredPedidos.map((item) => [item.codigo, item.solicitante, item.producto, item.cantidad, item.estado])
-          : filteredAlertas.map((item) => [item.titulo, item.remitente, item.prioridad, item.estado]),
-      fileName: isInventory ? 'inventario-sigirl.pdf' : isPedidos ? 'pedidos-sigirl.pdf' : 'alertas-sigirl.pdf',
+      title: isInv ? 'Reporte de Inventario SIGIRL' : isPed ? 'Reporte de Pedidos SIGIRL' : 'Reporte de Alertas SIGIRL',
+      headers: isInv ? ['Producto','Categoría','Cantidad','Ubicación','Estado'] : isPed ? ['Código','Solicitante','Producto','Cantidad','Estado'] : ['Alerta','Remitente','Prioridad','Estado'],
+      rows: isInv ? filteredProductos.map(i=>[i.nombre,i.categoria,i.cantidad,i.ubicacion,i.estado]) : isPed ? filteredPedidos.map(i=>[i.codigo,i.solicitante,i.producto,i.cantidad,i.estado]) : filteredAlertas.map(i=>[i.titulo,i.remitente,i.prioridad,i.estado]),
+      fileName: isInv ? 'inventario-sigirl.pdf' : isPed ? 'pedidos-sigirl.pdf' : 'alertas-sigirl.pdf',
     });
     toast.success('Reporte exportado a PDF');
   };
 
-  // ============================================================
-  // RENDERIZADO CONDICIONAL (PANTALLA DE CARGA)
-  // ============================================================
-  if (loading) {
-    return (
-      <Layout>
-        <div className="p-8 text-slate-600 font-semibold">Cargando panel administrativo...</div>
-      </Layout>
-    );
-  }
+  // ─── Tabs config ─────────────────────────────────────────────────
+  const TABS = [
+    { key: 'inventario', label: 'INVENTARIO', icon: <Package className="w-3.5 h-3.5" /> },
+    { key: 'pedidos',    label: 'PEDIDOS',    icon: <FlaskConical className="w-3.5 h-3.5" /> },
+    { key: 'alertas',   label: 'ALERTAS',    icon: <Bell className="w-3.5 h-3.5" /> },
+  ];
 
-  // ============================================================
-  // RENDERIZADO PRINCIPAL
-  // ============================================================
+  if (loading) return (
+    <Layout>
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="led-green mx-auto mb-3 w-3 h-3 rounded-full animate-pulse bg-emerald-400 shadow-[0_0_6px_#1FA971]" />
+          <p className="text-stone-500 font-mono text-sm">CARGANDO SISTEMA...</p>
+        </div>
+      </div>
+    </Layout>
+  );
+
   return (
     <Layout>
-      <div>
-        {/* ==================================================== */}
-        {/* HEADER DEL PANEL ADMINISTRATIVO */}
-        {/* ==================================================== */}
-        <div className="mb-10 rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_12px_35px_rgba(34,197,94,0.10)] backdrop-blur-xl md:p-6">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h1 className="text-[34px] font-bold text-slate-800">Panel administrativo PRO</h1>
-              <p className="text-slate-500 text-base">Gestiona inventario, pedidos y alertas desde un solo lugar con una vista ejecutiva más limpia.</p>
+      <div className="space-y-5">
 
-              {/* Badges de resumen */}
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                  {productos.length} productos
-                </span>
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
-                  {pedidos.filter((item) => item.estado === 'pendiente').length} pedidos pendientes
-                </span>
-                <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700">
-                  {alertas.filter((item) => item.estado === 'nueva').length} alertas nuevas
-                </span>
+        {/* Header */}
+        <div className="bg-white border border-[#E0E0E0] rounded-lg p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Shield className="h-4 w-4 text-[#1FA971]" />
+                <span className="text-[10px] font-mono font-bold text-[#1FA971] uppercase tracking-wider">PANEL ADMINISTRATIVO</span>
+                <span className="led-green w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#22c55e] animate-pulse" />
+              </div>
+              <h1 className="text-xl font-bold font-mono text-stone-700">Control de Sistema</h1>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25">{productos.length} productos</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400 border border-amber-200">{statsPedidos.pendientes} pendientes</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-500/10 text-rose-400 border border-rose-200">{statsAlertas.nuevas} alertas</span>
               </div>
             </div>
 
-            {/* Botones de navegación entre pestañas */}
-            <div className="flex flex-wrap justify-center gap-3 rounded-[24px] border border-emerald-100 bg-[#f8fff7] p-2.5">
-              <button
-                onClick={() => changeTab('inventario')}
-                className={`px-6 py-3 rounded-2xl font-semibold transition-all ${
-                  activeTab === 'inventario'
-                    ? 'bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white shadow-md shadow-emerald-500/20'
-                    : 'bg-white border border-emerald-100 text-slate-700 hover:bg-emerald-50 shadow-sm'
-                }`}
-              >
-                Inventario
-              </button>
-              <button
-                onClick={() => changeTab('pedidos')}
-                className={`px-6 py-3 rounded-2xl font-semibold transition-all ${
-                  activeTab === 'pedidos'
-                    ? 'bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white shadow-md shadow-emerald-500/20'
-                    : 'bg-white border border-emerald-100 text-slate-700 hover:bg-emerald-50 shadow-sm'
-                }`}
-              >
-                Pedidos
-              </button>
-              <button
-                onClick={() => changeTab('alertas')}
-                className={`px-6 py-3 rounded-2xl font-semibold transition-all ${
-                  activeTab === 'alertas'
-                    ? 'bg-gradient-to-r from-[#78d64b] to-[#43bb52] text-white shadow-md shadow-emerald-500/20'
-                    : 'bg-white border border-emerald-100 text-slate-700 hover:bg-emerald-50 shadow-sm'
-                }`}
-              >
-                Alertas
-              </button>
+            {/* Tabs */}
+            <div className="flex flex-wrap gap-2">
+              {TABS.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => changeTab(t.key)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded text-xs font-mono font-bold transition-all ${
+                    activeTab === t.key
+                      ? 'bg-emerald-500/15 border border-emerald-500/50 text-[#1FA971] shadow-[0_0_10px_rgba(34,197,94,0.1)]'
+                      : 'bg-stone-50 border border-[#E0E0E0] text-stone-500 hover:text-stone-600 hover:border-slate-500'
+                  }`}
+                >
+                  {t.icon}{t.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* ==================================================== */}
-        {/* PANEL DE REPORTES (Gráficos y actividad reciente) */}
-        {/* ==================================================== */}
+        {/* Report Panel */}
         <ReportPanel
-          title={activeTab === 'inventario' ? 'Reporte de inventario y stock' : activeTab === 'pedidos' ? 'Reporte de pedidos y prioridades' : 'Reporte de alertas y seguimiento'}
-          subtitle={activeTab === 'inventario' ? 'Resumen visual del estado de productos y categorías.' : activeTab === 'pedidos' ? 'Seguimiento de aprobaciones, rechazos y actividad reciente.' : 'Control de incidencias por prioridad, estado y atención pendiente.'}
+          title={activeTab==='inventario'?'Reporte de inventario y stock':activeTab==='pedidos'?'Reporte de pedidos y prioridades':'Reporte de alertas y seguimiento'}
+          subtitle={activeTab==='inventario'?'Resumen visual del estado de productos':activeTab==='pedidos'?'Seguimiento de aprobaciones y rechazos':'Control de incidencias por prioridad'}
           primaryData={reportPrimaryData}
           secondaryData={reportSecondaryData}
           activity={activityItems}
@@ -584,158 +370,62 @@ const AdminDashboard = () => {
           onExportPdf={handleExportPdf}
         />
 
-        {/* ==================================================== */}
-        {/* SECCIÓN: INVENTARIO */}
-        {/* ==================================================== */}
+        {/* ── INVENTARIO ───────────────────────────────────────────── */}
         {activeTab === 'inventario' && (
-          <div>
-            {/* Tarjetas de estadísticas - Inventario */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
-              <div className="rounded-[20px] bg-gradient-to-r from-blue-500 to-blue-600 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Productos Totales</p>
-                    <p className="text-4xl font-bold mt-2">{productos.length}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <Package className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-[20px] bg-gradient-to-r from-red-500 to-rose-500 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Reactivos Críticos</p>
-                    <p className="text-4xl font-bold mt-2">{productos.filter(p => p.estado === 'agotado').length}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <AlertCircle className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-[20px] bg-gradient-to-r from-amber-400 to-orange-500 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Alertas Activas</p>
-                    <p className="text-4xl font-bold mt-2">{alertas.filter((item) => item.estado === 'nueva').length}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <AlertCircle className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-[20px] bg-gradient-to-r from-lime-500 to-green-600 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Nivel de Inventario</p>
-                    <p className="text-4xl font-bold mt-2">{productos.length ? Math.max(10, Math.round((productos.filter((p) => p.estado === 'ok').length / productos.length) * 100)) : 0}%</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <TrendingUp className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <StatCard label="Total Productos"  value={productos.length}                                              icon={<Package className="w-4 h-4" />} color="blue" />
+              <StatCard label="Reactivos Críticos" value={productos.filter(p=>p.estado==='agotado').length}           icon={<AlertCircle className="w-4 h-4" />} color="rose" />
+              <StatCard label="Alertas Activas"   value={alertas.filter(a=>a.estado==='nueva').length}                icon={<AlertCircle className="w-4 h-4" />} color="amber" />
+              <StatCard label="Nivel Inventario"  value={`${productos.length?Math.max(10,Math.round((productos.filter(p=>p.estado==='ok').length/productos.length)*100)):0}%`} icon={<TrendingUp className="w-4 h-4" />} color="emerald" />
             </div>
 
-            {/* Barra de búsqueda y filtros de inventario */}
-            <div className="mb-5 rounded-[24px] border border-emerald-100 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-1 flex-col gap-3 md:flex-row">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Buscar producto, categoría o ubicación..."
-                      value={inventorySearchTerm}
-                      onChange={(e) => setInventorySearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-[#f8fff7] border border-emerald-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 text-sm transition-all"
-                    />
-                  </div>
-                  <div className="relative w-full md:w-52">
-                    <select
-                      value={inventoryCategory}
-                      onChange={(e) => setInventoryCategory(e.target.value)}
-                      className="appearance-none bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-emerald-300 cursor-pointer text-sm w-full transition-all"
-                    >
-                      {categoriasDisponibles.map((categoria) => (
-                        <option key={categoria} value={categoria}>
-                          {categoria === 'todas' ? 'Todas las categorías' : categoria}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  </div>
+            <LabSection
+              title="INVENTARIO DE REACTIVOS"
+              action={<><Plus className="w-3 h-3" /> NUEVO</>}
+              onAction={handleNuevoProducto}
+            >
+              {/* Filtros */}
+              <div className="flex flex-col md:flex-row gap-3 mb-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+                  <input type="text" placeholder="Buscar producto..." value={inventorySearchTerm} onChange={(e)=>setInventorySearchTerm(e.target.value)} className={`${inputCls} pl-9`} />
                 </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                    {filteredProductos.length} visibles
-                  </span>
-                  <button
-                    onClick={handleNuevoProducto}
-                    className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Nuevo producto
-                  </button>
+                <div className="relative w-full md:w-48">
+                  <select value={inventoryCategory} onChange={(e)=>setInventoryCategory(e.target.value)} className={`${selectCls} pr-8`}>
+                    {categoriasDisponibles.map(c=><option key={c} value={c}>{c==='todas'?'Todas las categorías':c}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400 pointer-events-none" />
                 </div>
+                <span className="px-3 py-2 rounded text-[10px] font-mono self-center text-[#1FA971] bg-[#E8F5F0] border border-[#1FA971]/25">{filteredProductos.length} visibles</span>
               </div>
-            </div>
 
-            {/* Tabla de inventario */}
-            <div className="bg-white rounded-xl border border-emerald-100 shadow-md overflow-hidden">
+              {/* Tabla */}
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-[#f6fff2] border-b border-emerald-100">
-                    <tr>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Producto</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Categoría</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Cantidad</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Ubicación</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Estado</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Acciones</th>
+                  <thead>
+                    <tr className="border-b border-[#E0E0E0]">
+                      {['PRODUCTO','CATEGORÍA','CANT.','UBICACIÓN','ESTADO','ACCIONES'].map(h=>(
+                        <th key={h} className="pb-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>
+                      ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-emerald-500/10">
+                  <tbody className="divide-y divide-[#E0E0E0]">
                     {filteredProductos.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" className="py-14 text-center text-slate-500 font-medium">
-                          No hay productos que coincidan con los filtros aplicados.
+                      <tr><td colSpan={6} className="py-10 text-center text-stone-400 font-mono text-sm">Sin resultados</td></tr>
+                    ) : filteredProductos.map((p) => (
+                      <tr key={p.id} className="hover:bg-[#E8F5F0]/60 transition-colors">
+                        <td className="py-3 text-sm font-mono font-semibold text-stone-700">{p.nombre}</td>
+                        <td className="py-3"><span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">{p.categoria}</span></td>
+                        <td className="py-3">
+                          <span className={`inline-flex items-center justify-center w-8 h-8 rounded font-bold font-mono text-sm ${p.cantidad<=p.umbral_minimo?'bg-amber-100 text-amber-400':'bg-[#E8F5F0] text-[#1FA971]'}`}>{p.cantidad}</span>
                         </td>
-                      </tr>
-                    ) : filteredProductos.map((producto) => (
-                      <tr key={producto.id} className="group hover:bg-emerald-500/5 transition-all duration-200">
-                        <td className="py-5 px-5">
-                          <p className="font-bold text-slate-900 text-sm">{producto.nombre}</p>
-                        </td>
-                        <td className="py-5 px-5">
-                          <span className="inline-flex items-center px-3 py-1.5 rounded-md bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-300">
-                            {producto.categoria}
-                          </span>
-                        </td>
-                        <td className="py-5 px-5 text-center">
-                          <span className={`inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold text-sm ${producto.cantidad <= producto.umbral_minimo ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                            {producto.cantidad}
-                          </span>
-                        </td>
-                        <td className="py-5 px-5 text-slate-700 text-sm">{producto.ubicacion}</td>
-                        <td className="py-5 px-5 text-center">{getEstadoBadge(producto.estado)}</td>
-                        <td className="py-5 px-5">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => handleEditarProducto(producto)}
-                              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                              title="Editar producto"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleEliminarProducto(producto.id)}
-                              className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                              title="Eliminar producto"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                        <td className="py-3 text-sm font-mono text-stone-500">{p.ubicacion}</td>
+                        <td className="py-3"><EstadoBadge estado={p.estado} /></td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-1">
+                            <button onClick={()=>handleEditarProducto(p)} className="p-1.5 text-stone-500 hover:text-[#1FA971] hover:bg-[#E8F5F0] rounded transition-colors" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
+                            <button onClick={()=>handleEliminarProducto(p.id)} className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors" title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
                         </td>
                       </tr>
@@ -743,407 +433,246 @@ const AdminDashboard = () => {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </LabSection>
           </div>
         )}
 
-        {/* ==================================================== */}
-        {/* SECCIÓN: PEDIDOS */}
-        {/* ==================================================== */}
+        {/* ── PEDIDOS ──────────────────────────────────────────────── */}
         {activeTab === 'pedidos' && (
-          <div>
-            {/* Tarjetas de estadísticas - Pedidos */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
-              <div className="rounded-[20px] bg-gradient-to-r from-blue-500 to-blue-600 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Total Pedidos</p>
-                    <p className="text-4xl font-bold mt-2">{statsPedidos.total}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <Package className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-[20px] bg-gradient-to-r from-red-500 to-rose-500 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Pendientes</p>
-                    <p className="text-4xl font-bold mt-2">{statsPedidos.pendientes}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <AlertCircle className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-[20px] bg-gradient-to-r from-amber-400 to-orange-500 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Aprobados</p>
-                    <p className="text-4xl font-bold mt-2">{statsPedidos.aprobados}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <CheckCircle2 className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-[20px] bg-gradient-to-r from-lime-500 to-green-600 text-white p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">Rechazados</p>
-                    <p className="text-4xl font-bold mt-2">{statsPedidos.rechazados}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/15">
-                    <XCircle className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <StatCard label="Total Pedidos"  value={statsPedidos.total}     icon={<Package className="w-4 h-4" />}       color="blue" />
+              <StatCard label="Pendientes"     value={statsPedidos.pendientes} icon={<AlertCircle className="w-4 h-4" />}  color="amber" />
+              <StatCard label="Aprobados"      value={statsPedidos.aprobados}  icon={<CheckCircle2 className="w-4 h-4" />} color="emerald" />
+              <StatCard label="Rechazados"     value={statsPedidos.rechazados} icon={<XCircle className="w-4 h-4" />}      color="rose" />
             </div>
 
-            {/* Barra de búsqueda y filtros de pedidos */}
-            <div className="bg-white rounded-[24px] border border-emerald-100 shadow-[0_10px_30px_rgba(34,197,94,0.08)] p-5 md:p-6 mb-8">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
-                <div className="flex-1 max-w-sm">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Buscar pedido o solicitante..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-[#f8fff7] border border-emerald-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-300 text-sm transition-all"
-                    />
-                  </div>
+            <LabSection title="GESTIÓN DE PEDIDOS">
+              <div className="flex flex-col md:flex-row gap-3 mb-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+                  <input type="text" placeholder="Buscar pedido o solicitante..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className={`${inputCls} pl-9`} />
                 </div>
-                <div className="relative w-full sm:w-48">
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="appearance-none bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-emerald-300 cursor-pointer text-sm w-full transition-all"
-                  >
-                    <option value="todos">Todos los estados</option>
+                <div className="relative w-full md:w-44">
+                  <select value={filterStatus} onChange={(e)=>setFilterStatus(e.target.value)} className={`${selectCls} pr-8`}>
+                    <option value="todos">Todos</option>
                     <option value="pendiente">Pendiente</option>
                     <option value="aprobado">Aprobado</option>
                     <option value="rechazado">Rechazado</option>
                   </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400 pointer-events-none" />
                 </div>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 text-sm"
-                />
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="bg-[#f8fff7] border border-emerald-100 rounded-xl px-4 py-3 text-sm"
-                />
+                <input type="date" value={dateFrom} onChange={(e)=>setDateFrom(e.target.value)} className={`${inputCls} w-full md:w-36`} />
+                <input type="date" value={dateTo}   onChange={(e)=>setDateTo(e.target.value)}   className={`${inputCls} w-full md:w-36`} />
               </div>
-            </div>
 
-            {/* Tabla de pedidos */}
-            <div className="bg-white rounded-xl border border-emerald-100 shadow-md overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-[#f6fff2] border-b border-emerald-100">
-                    <tr>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Código</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Solicitante</th>
-                      <th className="text-left py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Producto</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Cant.</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Prioridad</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Estado</th>
-                      <th className="text-center py-4 px-5 font-bold text-xs uppercase tracking-wider text-purple-700">Acciones</th>
+                  <thead>
+                    <tr className="border-b border-[#E0E0E0]">
+                      {['CÓDIGO','SOLICITANTE','PRODUCTO','CANT.','PRIORIDAD','ESTADO','ACCIONES'].map(h=>(
+                        <th key={h} className="pb-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>
+                      ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-purple-500/10">
-                    {filteredPedidos.length === 0 ? (
-                      <tr>
-                        <td colSpan="7" className="py-16 text-center">
-                          <div className="flex flex-col items-center justify-center gap-3">
-                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-200/30 to-indigo-200/20 flex items-center justify-center text-3xl">
-                              📋
-                            </div>
-                            <p className="font-semibold text-slate-700 text-sm">No hay pedidos para mostrar</p>
+                  <tbody className="divide-y divide-[#E0E0E0]">
+                    {filteredPedidos.length===0 ? (
+                      <tr><td colSpan={7} className="py-10 text-center text-stone-400 font-mono text-sm">Sin pedidos</td></tr>
+                    ) : filteredPedidos.map((p) => (
+                      <tr key={p.id} className="hover:bg-[#E8F5F0]/60 transition-colors">
+                        <td className="py-3 text-[11px] font-mono font-bold text-stone-600">{p.codigo}</td>
+                        <td className="py-3 text-[11px] font-mono text-stone-600">{p.solicitante}</td>
+                        <td className="py-3">
+                          <p className="text-[11px] font-mono text-stone-600">{p.producto}</p>
+                          {p.evaluacion_seguridad?.reactivoCritico && <span className="text-[9px] font-mono text-amber-400">⚠ Autorización especial</span>}
+                        </td>
+                        <td className="py-3 text-[11px] font-mono text-stone-500">{p.cantidad}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${p.prioridad==='alta'?'bg-rose-100 text-rose-400 border border-rose-200':p.prioridad==='media'?'bg-amber-100 text-amber-400 border border-amber-200':'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25'}`}>{p.prioridad}</span>
+                        </td>
+                        <td className="py-3"><EstadoBadge estado={p.estado} /></td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-1">
+                            <button onClick={()=>handleVerPedido(p)} className="p-1.5 text-stone-500 hover:text-stone-600 hover:bg-stone-100 rounded transition-colors" title="Ver"><Eye className="w-3.5 h-3.5" /></button>
+                            {p.estado==='pendiente' && <>
+                              <button onClick={()=>handleAprobarPedido(p.id)} className="p-1.5 text-stone-500 hover:text-[#1FA971] hover:bg-[#E8F5F0] rounded transition-colors" title="Aprobar"><CheckCircle2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={()=>setPedidoToReject({ id: p.id, codigo: p.codigo, producto: p.producto, solicitante: p.solicitante, motivo: '' })} className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors" title="Rechazar"><XCircle className="w-3.5 h-3.5" /></button>
+                            </>}
                           </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredPedidos.map((pedido) => (
-                        <tr key={pedido.id} className="group hover:bg-purple-500/5 transition-all duration-200">
-                          <td className="py-5 px-5">
-                            <p className="font-bold text-slate-900 text-sm">{pedido.codigo}</p>
-                          </td>
-                          <td className="py-5 px-5">
-                            <p className="font-semibold text-slate-700 text-sm">{pedido.solicitante}</p>
-                          </td>
-                          <td className="py-5 px-5">
-                            <p className="text-slate-600 text-sm">{pedido.producto}</p>
-                            {pedido.evaluacion_seguridad?.reactivoCritico && (
-                              <span className="inline-flex mt-2 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 border border-amber-300">
-                                Autorización especial
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-5 px-5 text-center">
-                            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold text-sm bg-blue-100 text-blue-700">
-                              {pedido.cantidad}
-                            </span>
-                          </td>
-                          <td className="py-5 px-5 text-center">
-                            <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold border ${pedido.prioridad === 'alta' ? 'bg-rose-100 text-rose-700 border-rose-300' : pedido.prioridad === 'media' ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-emerald-100 text-emerald-700 border-emerald-300'}`}>
-                              {pedido.prioridad}
-                            </span>
-                          </td>
-                          <td className="py-5 px-5 text-center">{getEstadoBadge(pedido.estado)}</td>
-                          <td className="py-5 px-5">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => handleVerPedido(pedido)}
-                                className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                                title="Ver detalles"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              {pedido.estado === 'pendiente' && (
-                                <>
-                                  <button
-                                    onClick={() => handleAprobarPedido(pedido.id)}
-                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors hover:text-emerald-700"
-                                    title="Aprobar"
-                                  >
-                                    <CheckCircle2 className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleRechazarPedido(pedido.id)}
-                                    className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors hover:text-rose-700"
-                                    title="Rechazar"
-                                  >
-                                    <XCircle className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ==================================================== */}
-        {/* SECCIÓN: ALERTAS */}
-        {/* ==================================================== */}
-        {activeTab === 'alertas' && (
-          <div>
-            {/* Tarjetas de estadísticas - Alertas */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              <div className="rounded-2xl border border-rose-200 bg-white/80 p-5 shadow-sm">
-                <p className="text-sm font-semibold text-rose-600 uppercase">Total alertas</p>
-                <p className="text-3xl font-bold text-slate-900 mt-2">{statsAlertas.total}</p>
-              </div>
-              <div className="rounded-2xl border border-amber-200 bg-white/80 p-5 shadow-sm">
-                <p className="text-sm font-semibold text-amber-600 uppercase">Nuevas</p>
-                <p className="text-3xl font-bold text-slate-900 mt-2">{statsAlertas.nuevas}</p>
-              </div>
-              <div className="rounded-2xl border border-indigo-200 bg-white/80 p-5 shadow-sm">
-                <p className="text-sm font-semibold text-indigo-600 uppercase">Prioridad alta</p>
-                <p className="text-3xl font-bold text-slate-900 mt-2">{statsAlertas.altas}</p>
-              </div>
-            </div>
-
-            {/* Filtro de prioridad para alertas */}
-            <div className="mb-5 rounded-[24px] border border-rose-100 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-700">Centro de alertas</p>
-                  <p className="text-xs text-slate-500">Filtra incidencias y atiende primero las de mayor impacto.</p>
-                </div>
-                <div className="relative w-full md:w-52">
-                  <select
-                    value={alertPriorityFilter}
-                    onChange={(e) => setAlertPriorityFilter(e.target.value)}
-                    className="appearance-none bg-[#fff7f7] border border-rose-100 rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-rose-300 cursor-pointer text-sm w-full transition-all"
-                  >
-                    <option value="todas">Todas las prioridades</option>
-                    <option value="alta">Alta</option>
-                    <option value="media">Media</option>
-                    <option value="baja">Baja</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
-              </div>
-            </div>
-
-            {/* Tabla de alertas */}
-            <div className="rounded-2xl border border-white/20 bg-white/70 backdrop-blur-sm overflow-hidden shadow-lg">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-rose-50 border-b border-rose-100">
-                    <tr>
-                      <th className="text-left py-4 px-5 text-xs font-bold uppercase tracking-wider text-rose-700">Alerta</th>
-                      <th className="text-left py-4 px-5 text-xs font-bold uppercase tracking-wider text-rose-700">Origen</th>
-                      <th className="text-center py-4 px-5 text-xs font-bold uppercase tracking-wider text-rose-700">Prioridad</th>
-                      <th className="text-center py-4 px-5 text-xs font-bold uppercase tracking-wider text-rose-700">Estado</th>
-                      <th className="text-center py-4 px-5 text-xs font-bold uppercase tracking-wider text-rose-700">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-rose-100">
-                    {filteredAlertas.length === 0 ? (
-                      <tr>
-                        <td colSpan="5" className="py-10 text-center text-slate-500">No hay alertas registradas con ese filtro.</td>
-                      </tr>
-                    ) : filteredAlertas.map((alerta) => (
-                      <tr key={alerta.id} className="hover:bg-rose-50/50 transition-colors">
-                        <td className="py-4 px-5">
-                          <p className="font-semibold text-slate-800 text-sm">{alerta.titulo}</p>
-                          <p className="text-xs text-slate-500 mt-1">{alerta.descripcion}</p>
-                        </td>
-                        <td className="py-4 px-5 text-sm text-slate-600">{alerta.remitente}</td>
-                        <td className="py-4 px-5 text-center">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${alerta.prioridad === 'alta' ? 'bg-rose-100 text-rose-700' : alerta.prioridad === 'media' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                            {alerta.prioridad}
-                          </span>
-                        </td>
-                        <td className="py-4 px-5 text-center">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${alerta.estado === 'resuelta' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                            {alerta.estado}
-                          </span>
-                        </td>
-                        <td className="py-4 px-5 text-center">
-                          <button
-                            onClick={() => handleResolverAlerta(alerta.id)}
-                            disabled={alerta.estado === 'resuelta'}
-                            className="px-3 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 text-white text-xs font-semibold disabled:opacity-50"
-                          >
-                            Resolver
-                          </button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </LabSection>
           </div>
         )}
 
-        {/* ==================================================== */}
-        {/* MODAL PARA CREAR/EDITAR PRODUCTO */}
-        {/* ==================================================== */}
-        {showModalInventario && (
-          <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-xl rounded-[28px] sigirl-form-surface overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-emerald-100 bg-gradient-to-r from-[#f6fff2] to-white">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">
-                    {selectedProduct ? 'Editar producto' : 'Nuevo producto'}
-                  </h2>
-                  <p className="text-sm text-slate-500">Completa la información del inventario</p>
+        {/* ── ALERTAS ──────────────────────────────────────────────── */}
+        {activeTab === 'alertas' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <StatCard label="Total Alertas"    value={statsAlertas.total}   icon={<Bell className="w-4 h-4" />}     color="rose" />
+              <StatCard label="Nuevas"           value={statsAlertas.nuevas}  icon={<AlertCircle className="w-4 h-4" />} color="amber" />
+              <StatCard label="Prioridad Alta"   value={statsAlertas.altas}   icon={<Shield className="w-4 h-4" />}   color="rose" />
+            </div>
+
+            <LabSection title="CENTRO DE ALERTAS" action="+ Nueva alerta" onAction={() => setShowModalAlerta(true)}>
+              <div className="flex justify-end mb-4">
+                <div className="relative w-48">
+                  <select value={alertPriorityFilter} onChange={(e)=>setAlertPriorityFilter(e.target.value)} className={`${selectCls} pr-8`}>
+                    <option value="todas">Todas</option>
+                    <option value="alta">Alta</option>
+                    <option value="media">Media</option>
+                    <option value="baja">Baja</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400 pointer-events-none" />
                 </div>
-                <button
-                  onClick={() => {
-                    setShowModalInventario(false);
-                    resetFormProducto();
-                  }}
-                  className="p-2 rounded-lg hover:bg-slate-200 transition-colors"
-                  title="Cerrar"
-                >
-                  <XCircle className="w-5 h-5 text-slate-600" />
-                </button>
               </div>
 
-              {/* Campos del formulario */}
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[#E0E0E0]">
+                      {['ALERTA','ORIGEN','PRIORIDAD','ESTADO','ACCIONES'].map(h=>(
+                        <th key={h} className="pb-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E0E0E0]">
+                    {filteredAlertas.length===0 ? (
+                      <tr><td colSpan={5} className="py-10 text-center text-stone-400 font-mono text-sm">Sin alertas</td></tr>
+                    ) : filteredAlertas.map((a) => (
+                      <tr key={a.id} className="hover:bg-rose-500/5 transition-colors">
+                        <td className="py-3">
+                          <p className="text-sm font-mono font-semibold text-stone-700">{a.titulo}</p>
+                          <p className="text-[10px] font-mono text-stone-500 mt-0.5">{a.descripcion}</p>
+                        </td>
+                        <td className="py-3 text-[11px] font-mono text-stone-500">{a.remitente}</td>
+                        <td className="py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${a.prioridad==='alta'?'bg-rose-100 text-rose-400 border border-rose-200':a.prioridad==='media'?'bg-amber-100 text-amber-400 border border-amber-200':'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25'}`}>{a.prioridad}</span></td>
+                        <td className="py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${a.estado==='resuelta'?'bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25':'bg-blue-100 text-blue-400 border border-blue-200'}`}>{a.estado}</span></td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-2">
+                            <button onClick={()=>handleResolverAlerta(a.id)} disabled={a.estado==='resuelta'} className="px-3 py-1.5 rounded text-[10px] font-mono font-bold bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25 hover:bg-[#E8F5F0] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                              Resolver
+                            </button>
+                            <button onClick={()=>handleEliminarAlerta(a.id)} className="p-1.5 rounded text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-200 transition-colors">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </LabSection>
+          </div>
+        )}
+
+        {/* ── MODAL PRODUCTO ───────────────────────────────────────── */}
+        {showModalInventario && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-xl bg-white border border-[#E0E0E0] rounded-lg overflow-hidden shadow-2xl shadow-stone-300/60">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0]">
+                <div>
+                  <h2 className="text-sm font-mono font-bold text-[#1FA971] uppercase tracking-wider">{selectedProduct?'EDITAR PRODUCTO':'NUEVO PRODUCTO'}</h2>
+                  <p className="text-[10px] font-mono text-stone-500 mt-0.5">Complete la información del inventario</p>
+                </div>
+                <button onClick={()=>{ setShowModalInventario(false); resetFormProducto(); }} className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"><XCircle className="w-4 h-4" /></button>
+              </div>
+
+              {/* Form */}
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Nombre</label>
-                  <input
-                    type="text"
-                    value={formProducto.nombre}
-                    onChange={(e) => setFormProducto({ ...formProducto, nombre: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                    placeholder="Nombre del producto"
-                  />
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Nombre</label>
+                  <input type="text" value={formProducto.nombre} onChange={(e)=>setFormProducto({...formProducto,nombre:e.target.value})} className={inputCls} placeholder="Nombre del producto" />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Categoría</label>
-                  <select
-                    value={formProducto.categoria}
-                    onChange={(e) => setFormProducto({ ...formProducto, categoria: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                  >
-                    <option value="Solventes">Solventes</option>
-                    <option value="Ácidos">Ácidos</option>
-                    <option value="Bases">Bases</option>
-                    <option value="EPP">EPP</option>
-                    <option value="Materiales">Materiales</option>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Categoría</label>
+                  <select value={formProducto.categoria} onChange={(e)=>setFormProducto({...formProducto,categoria:e.target.value})} className={selectCls}>
+                    {['Solventes','Ácidos','Bases','EPP','Materiales'].map(c=><option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
-
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Ubicación</label>
-                  <input
-                    type="text"
-                    value={formProducto.ubicacion}
-                    onChange={(e) => setFormProducto({ ...formProducto, ubicacion: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                    placeholder="Ej. Almacén A"
-                  />
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Ubicación</label>
+                  <input type="text" value={formProducto.ubicacion} onChange={(e)=>setFormProducto({...formProducto,ubicacion:e.target.value})} className={inputCls} placeholder="Ej. Almacén A" />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Cantidad</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formProducto.cantidad}
-                    onChange={(e) => setFormProducto({ ...formProducto, cantidad: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                    placeholder="0"
-                  />
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Cantidad</label>
+                  <input type="number" min="0" value={formProducto.cantidad} onChange={(e)=>setFormProducto({...formProducto,cantidad:e.target.value})} className={inputCls} placeholder="0" />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Umbral mínimo</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formProducto.umbral_minimo}
-                    onChange={(e) => setFormProducto({ ...formProducto, umbral_minimo: e.target.value })}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                    placeholder="0"
-                  />
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Umbral mínimo</label>
+                  <input type="number" min="0" value={formProducto.umbral_minimo} onChange={(e)=>setFormProducto({...formProducto,umbral_minimo:e.target.value})} className={inputCls} placeholder="0" />
                 </div>
               </div>
 
-              {/* Botones del modal */}
-              <div className="sigirl-form-footer px-6 py-4 border-t border-emerald-100 bg-[#f8fff7]">
-                <button
-                  onClick={() => {
-                    setShowModalInventario(false);
-                    resetFormProducto();
-                  }}
-                  className="sigirl-btn-secondary"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleGuardarProducto}
-                  className="sigirl-btn-primary"
-                >
-                  {selectedProduct ? 'Guardar cambios' : 'Crear producto'}
+              {/* Footer */}
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+                <button onClick={()=>{ setShowModalInventario(false); resetFormProducto(); }} className="px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors">Cancelar</button>
+                <button onClick={handleGuardarProducto} className="px-4 py-2 rounded text-xs font-mono font-bold bg-[#1FA971] text-white hover:bg-[#157A55] transition-colors shadow-sm">
+                  {selectedProduct?'Guardar cambios':'Crear producto'}
                 </button>
               </div>
             </div>
           </div>
         )}
+
+        {/* ── MODAL CREAR ALERTA ────────────────────────────────── */}
+        {showModalAlerta && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-white border border-[#E0E0E0] rounded-lg overflow-hidden shadow-2xl shadow-stone-300/60">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0]">
+                <div>
+                  <h2 className="text-sm font-mono font-bold text-rose-400 uppercase tracking-wider">NUEVA ALERTA</h2>
+
+              <RejectPedidoModal
+                open={Boolean(pedidoToReject)}
+                pedido={pedidoToReject}
+                motivo={pedidoToReject?.motivo || ''}
+                onChangeMotivo={(motivo) => setPedidoToReject((prev) => prev ? { ...prev, motivo } : prev)}
+                onClose={() => setPedidoToReject(null)}
+                onConfirm={() => pedidoToReject && handleRechazarPedido(pedidoToReject.id)}
+              />
+                  <p className="text-[10px] font-mono text-stone-500 mt-0.5">Registrar una nueva incidencia</p>
+                </div>
+                <button onClick={()=>setShowModalAlerta(false)} className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"><XCircle className="w-4 h-4" /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Título</label>
+                  <input type="text" value={formAlerta.titulo} onChange={(e)=>setFormAlerta({...formAlerta,titulo:e.target.value})} className={inputCls} placeholder="Título de la alerta" />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Descripción</label>
+                  <textarea rows={3} value={formAlerta.descripcion} onChange={(e)=>setFormAlerta({...formAlerta,descripcion:e.target.value})} className={`${inputCls} resize-none`} placeholder="Descripción de la incidencia" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Prioridad</label>
+                    <select value={formAlerta.prioridad} onChange={(e)=>setFormAlerta({...formAlerta,prioridad:e.target.value})} className={selectCls}>
+                      <option value="baja">Baja</option>
+                      <option value="media">Media</option>
+                      <option value="alta">Alta</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Remitente</label>
+                    <input type="text" value={formAlerta.remitente} onChange={(e)=>setFormAlerta({...formAlerta,remitente:e.target.value})} className={inputCls} placeholder="Admin" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+                <button onClick={()=>setShowModalAlerta(false)} className="px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors">Cancelar</button>
+                <button onClick={handleCrearAlerta} className="px-4 py-2 rounded text-xs font-mono font-bold bg-rose-500 text-white hover:bg-rose-400 transition-colors">Crear alerta</button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </Layout>
   );

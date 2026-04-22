@@ -1,215 +1,273 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap');
+@import './styles/laboratory.css';
 
-:root {
-  color-scheme: light;
-  --bg-page: linear-gradient(135deg, #ecfdf5 0%, #f0fdfa 45%, #ecfeff 100%);
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --glass-border: rgba(255, 255, 255, 0.45);
-  --glass-shadow: 0 12px 35px rgba(16, 185, 129, 0.08);
-  --accent-ring: rgba(16, 185, 129, 0.35);
+/* Configuración del tema para Tailwind v4 */
+@theme {
+  --color-lab-bg: #f5f0e8;
+  --color-lab-surface: #ffffff;
+  --color-lab-border: #e2e8f0;
+  --color-lab-accent: #22c55e;
+  --color-lab-accent-glow: rgba(34, 197, 94, 0.1);
+  --color-lab-text: #1e293b;
+  --color-lab-text-dim: #64748b;
+  --color-lab-text-accent: #166534;
+  --color-lab-danger: #ef4444;
+  --color-lab-warning: #f59e0b;
+  --color-lab-info: #3b82f6;
+
+  /* Brand palette */
+  --color-brand-primary: #1FA971;
+  --color-brand-dark:    #157A55;
+  --color-brand-light:   #E8F5F0;
+  --color-brand-bg:      #F5F7F6;
+  --color-brand-sidebar: #F0F4F2;
+
+  --font-mono: 'Roboto', 'Segoe UI', Arial, sans-serif;
+  --font-serif: 'Roboto', 'Segoe UI', Arial, sans-serif;
+  
+  --animate-pulse-slow: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-glow: glow 1.5s ease-in-out infinite alternate;
+  --animate-blink: blink 1s step-end infinite;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@keyframes glow {
+  0% { text-shadow: 0 0 2px #22c55e; }
+  100% { text-shadow: 0 0 8px #22c55e; }
 }
 
-html {
-  scroll-behavior: smooth;
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
-body {
-  font-family: 'Segoe UI', 'Inter', 'Roboto', 'Helvetica Neue', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  min-height: 100vh;
-  background: var(--bg-page);
-  color: var(--text-primary);
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: var(--font-mono);
+    background: var(--color-lab-bg);
+    color: var(--color-lab-text);
+    min-height: 100vh;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
+@layer components {
+  .glass-effect {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+  }
+  
+  .data-grid {
+    display: grid;
+    gap: 1rem;
+  }
+  
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+  }
+  
+  @media (min-width: 640px) {
+    .metrics-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  
+  @media (min-width: 1024px) {
+    .metrics-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  .card-base {
+    background: var(--color-lab-surface);
+    border: 1px solid var(--color-lab-border);
+    border-radius: 0.5rem;
+    transition: all 0.2s;
+  }
+
+  .input-base {
+    width: 100%;
+    padding: 0.625rem 1rem;
+    background: #ffffff;
+    border: 1px solid var(--color-lab-border);
+    border-radius: 0.375rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    color: #1e293b;
+    transition: all 0.2s;
+  }
+  
+  .input-base:focus {
+    outline: none;
+    border-color: var(--color-lab-accent);
+    box-shadow: 0 0 0 2px var(--color-lab-accent-glow);
+  }
+  
+  .input-base::placeholder {
+    color: #94a3b8;
+  }
+
+  .badge-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+  }
+
+  .badge-success {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    color: #166534;
+  }
+
+  .badge-warning {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    color: #b45309;
+  }
+
+  .badge-danger {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #b91c1c;
+  }
+
+  /* ── Brand component classes ─────────────────────────── */
+  .sigirl-card {
+    background: #ffffff;
+    border: 1px solid #E0E0E0;
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+
+  .sigirl-card:hover {
+    box-shadow: 0 4px 14px rgba(31, 169, 113, 0.12);
+    border-color: #b2dece;
+  }
+
+  .sigirl-card-header {
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid #E0E0E0;
+    background: #E8F5F0;
+    border-radius: 0.75rem 0.75rem 0 0;
+  }
+
+  .sigirl-stat-card {
+    background: #ffffff;
+    border: 1px solid #E0E0E0;
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    border-top: 3px solid var(--color-brand-primary);
+    transition: box-shadow 0.2s, transform 0.2s;
+  }
+
+  .sigirl-stat-card:hover {
+    box-shadow: 0 6px 18px rgba(31, 169, 113, 0.14);
+    transform: translateY(-2px);
+  }
+
+  .btn-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 1rem;
+    background: var(--color-brand-primary);
+    color: #ffffff;
+    border: none;
+    border-radius: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(31, 169, 113, 0.3);
+    transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+  }
+
+  .btn-brand:hover {
+    background: var(--color-brand-dark);
+    box-shadow: 0 4px 12px rgba(31, 169, 113, 0.35);
+    transform: translateY(-1px);
+  }
+
+  .btn-brand:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(31, 169, 113, 0.25);
+  }
+
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--color-brand-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
 }
 
-code {
-  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 10px rgba(34, 197, 94, 0.3);
+  }
+  
+  .border-glow {
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.2);
+  }
+
+  .animate-pulse-slow {
+    animation: var(--animate-pulse-slow);
+  }
+
+  .animate-blink {
+    animation: var(--animate-blink);
+  }
 }
 
-#root {
-  min-height: 100vh;
-  isolation: isolate;
-}
-
-::selection {
-  background: rgba(20, 184, 166, 0.18);
-  color: #0f172a;
-}
-
-.glass-panel {
-  background: linear-gradient(to bottom right, rgba(255,255,255,0.72), rgba(255,255,255,0.48));
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
-}
-
-.gradient-title {
-  background: linear-gradient(90deg, #059669 0%, #0d9488 50%, #0891b2 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-@keyframes floatSoft {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-6px); }
-}
-
-.animate-float-soft {
-  animation: floatSoft 5s ease-in-out infinite;
-}
-
+/* Scrollbar - estilo claro */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(226, 232, 240, 0.6);
-  border-radius: 9999px;
+  background: #e2e8f0;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #5eead4, #14b8a6);
-  border-radius: 9999px;
+  background: #cbd5e1;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #2dd4bf, #0f766e);
+  background: #22c55e;
 }
 
-.sigirl-form-surface {
-  background: linear-gradient(to bottom right, rgba(255, 255, 255, 0.96), rgba(248, 255, 252, 0.9));
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(16, 185, 129, 0.12);
-  box-shadow: 0 18px 40px rgba(16, 185, 129, 0.08);
-}
-
-.sigirl-form-label {
-  display: block;
-  margin-bottom: 0.65rem;
-  font-size: 0.92rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  color: #0f766e;
-}
-
-.sigirl-form-control {
-  width: 100%;
-  min-height: 3.45rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  background: linear-gradient(to right, rgba(255,255,255,0.95), rgba(240,253,250,0.96));
-  padding: 0.95rem 1.05rem;
-  color: #0f172a;
-  font-size: 0.98rem;
-  line-height: 1.45;
-  transition: all 0.2s ease;
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
-}
-
-.sigirl-form-control::placeholder {
-  color: #94a3b8;
-}
-
-.sigirl-form-control:hover {
-  border-color: rgba(16, 185, 129, 0.28);
-  background: rgba(255,255,255,0.99);
-}
-
-.sigirl-form-control:focus {
-  outline: none;
-  border-color: rgba(16, 185, 129, 0.55);
-  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.14);
-}
-
-.sigirl-form-control-icon {
-  padding-left: 2.85rem;
-}
-
-.sigirl-form-textarea {
-  min-height: 7.5rem;
-  resize: vertical;
-}
-
-.sigirl-form-option {
-  border-radius: 1rem;
-  padding: 1rem 1.1rem;
-}
-
-.sigirl-form-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.9rem;
-  justify-content: flex-end;
-}
-
-.sigirl-btn-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border-radius: 0.9rem;
-  padding: 0.8rem 1.2rem;
-  font-weight: 700;
-  color: white;
-  background: linear-gradient(90deg, #10b981, #0d9488, #0891b2);
-  box-shadow: 0 12px 24px rgba(16, 185, 129, 0.18);
-  transition: all 0.2s ease;
-}
-
-.sigirl-btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 16px 28px rgba(16, 185, 129, 0.24);
-}
-
-.sigirl-btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border-radius: 0.9rem;
-  padding: 0.8rem 1.2rem;
-  font-weight: 700;
-  color: #334155;
-  background: rgba(255,255,255,0.9);
-  border: 1px solid rgba(16, 185, 129, 0.18);
-  transition: all 0.2s ease;
-}
-
-.sigirl-btn-secondary:hover {
-  background: #ecfdf5;
-}
-
-.sigirl-btn-danger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border-radius: 0.9rem;
-  padding: 0.8rem 1.2rem;
-  font-weight: 700;
-  color: white;
-  background: linear-gradient(90deg, #ef4444, #e11d48);
-  transition: all 0.2s ease;
-}
-
-.sigirl-btn-danger:hover {
-  filter: brightness(1.04);
+::selection {
+  background: rgba(34, 197, 94, 0.2);
+  color: #166534;
 }

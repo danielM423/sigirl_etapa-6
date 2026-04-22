@@ -1,288 +1,160 @@
-// ARCHIVO 2: src/components/Layout.jsx
-import { useContext, useMemo, useState } from 'react';
-import { Bell, LifeBuoy, Search, X, AlertCircle, HelpCircle, Sparkles } from 'lucide-react';
-import { toast } from 'react-toastify';
-import Sidebar from './Sidebar';
-import { UserContext } from '../context/AuthContext';
-import { createAlerta } from '../services/api';
-
-const normalizeAlertType = (tipo) => (tipo === 'problema' || tipo === 'ayuda' ? 'otro' : tipo || 'otro');
+import React, { useContext, useState } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { UserContext } from '../context/UserContext';
+import { 
+  LayoutDashboard, 
+  Package, 
+  ClipboardList, 
+  Users, 
+  AlertTriangle,
+  FileText,
+  User,
+  LogOut,
+  Menu,
+  X,
+  FlaskConical
+} from 'lucide-react';
 
 const Layout = ({ children }) => {
-  const [showHelpModal, setShowHelpModal] = useState(false);
-  const [helpForm, setHelpForm] = useState({
-    tipo: 'ayuda',
-    prioridad: 'media',
-    descripcion: '',
-  });
-  const { user, role } = useContext(UserContext);
+  const { user, logout, role } = useContext(UserContext);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const normalizedRole = role === 'jefe_superior' ? 'jefe' : role;
 
-  const roleLabel = useMemo(() => {
-    if (role === 'admin') return 'Administrador';
-    if (role === 'jefe' || role === 'jefe_superior') return 'Jefe Superior';
-    return 'Usuario';
-  }, [role]);
+  const isAdmin = normalizedRole === 'admin';
+  const isJefe = normalizedRole === 'jefe';
 
-  const displayName = user?.full_name || user?.first_name || user?.username || 'Usuario';
-  const avatarSrc = user?.profile?.avatar || user?.avatar || '';
-  const initials = `${displayName?.[0] || 'U'}${displayName?.[1] || ''}`.toUpperCase();
+  const navItems = [
+    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" />, roles: ['admin', 'jefe', 'usuario'] },
+    { path: '/inventario', label: 'Inventario', icon: <Package className="w-4 h-4" />, roles: ['admin', 'jefe', 'usuario'] },
+    { path: '/pedidos', label: 'Pedidos', icon: <ClipboardList className="w-4 h-4" />, roles: ['admin', 'jefe', 'usuario'] },
+    { path: '/usuarios', label: 'Usuarios', icon: <Users className="w-4 h-4" />, roles: ['admin', 'jefe'] },
+    { path: '/alertas', label: 'Alertas', icon: <AlertTriangle className="w-4 h-4" />, roles: ['admin', 'jefe'] },
+    { path: '/reportes', label: 'Reportes', icon: <FileText className="w-4 h-4" />, roles: ['admin', 'jefe'] },
+    { path: '/perfil', label: 'Perfil', icon: <User className="w-4 h-4" />, roles: ['admin', 'jefe', 'usuario'] },
+  ];
 
-  const handleHelpSubmit = async () => {
-    if (!helpForm.descripcion.trim()) {
-      toast.error('Describe brevemente la alerta o la ayuda que necesitas.');
-      return;
-    }
+  const filteredNav = navItems.filter(item => item.roles.includes(normalizedRole));
 
-    try {
-      await createAlerta({
-        tipo: normalizeAlertType(helpForm.tipo),
-        prioridad: helpForm.prioridad,
-        titulo: helpForm.tipo === 'problema' ? 'Reporte de problema en el sistema' : 'Solicitud de ayuda del usuario',
-        descripcion: helpForm.descripcion.trim(),
-        mensaje: helpForm.descripcion.trim(),
-        remitente: user?.username || 'Usuario',
-        resuelta: false,
-      });
-      setHelpForm({ tipo: 'ayuda', prioridad: 'media', descripcion: '' });
-      setShowHelpModal(false);
-      toast.success('Tu reporte fue enviado correctamente.');
-    } catch {
-      toast.error('No se pudo enviar el reporte. Inténtalo de nuevo.');
-    }
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex relative">
-      {/* Fondo decorativo muy sutil */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-100/20 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-teal-100/15 rounded-full blur-3xl" />
-      </div>
-
-      {/* Sidebar */}
-      <div className="relative z-10 flex-shrink-0">
-        <Sidebar />
-      </div>
-
-      {/* Main Content - Centrado siempre */}
-      <main className="flex-1 flex flex-col min-h-screen relative z-10 overflow-hidden">
-        {/* Header Moderno y Limpio */}
-        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-8 py-5 shadow-sm">
-          <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-6">
-            {/* Búsqueda */}
-            <div className="flex-1 max-w-xl">
-              <div className="relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors duration-200" />
-                <input
-                  type="text"
-                  placeholder="Buscar en el sistema..."
-                  className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-200 hover:border-slate-300"
-                />
+    <div className="min-h-screen bg-[#F5F7F6]">
+      {/* Header */}
+      <div className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-[#E0E0E0] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+        <div className="flex justify-between items-center px-3 sm:px-6 py-3">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="lg:hidden text-[#1FA971] hover:text-[#157A55] transition-colors"
+            >
+              {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+            
+            <Link to="/dashboard" className="flex items-center gap-3">
+              <div className="p-1.5 rounded-lg bg-[#E8F5F0] border border-[#1FA971]/20">
+                <FlaskConical className="w-5 h-5 text-[#1FA971]" />
+              </div>
+              <div className="hidden sm:block">
+                <h1 className="text-sm font-bold tracking-wider text-emerald-700 font-mono">SIGIRL</h1>
+                <p className="text-[9px] text-stone-500 font-mono hidden md:block">v2.4.0 | Inventory Control</p>
+              </div>
+            </Link>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#1FA971] shadow-[0_0_6px_#1FA971] animate-pulse"></span>
+              <span className="text-[10px] text-[#1FA971] font-mono uppercase tracking-wider">SYSTEM ONLINE</span>
+            </div>
+            
+            <div className="w-px h-6 bg-stone-200 hidden md:block"></div>
+            
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-[#E8F5F0] border-2 border-[#1FA971]/40 flex items-center justify-center">
+                <span className="text-xs font-bold text-[#157A55] font-mono">
+                  {user?.nombre?.charAt(0)?.toUpperCase() || 'U'}
+                </span>
+              </div>
+              <div className="hidden md:block">
+                <p className="text-xs font-medium text-stone-700 font-mono">
+                  {user?.nombre || 'Usuario'}
+                </p>
+                <p className="text-[9px] text-stone-500 font-mono uppercase">
+                  {normalizedRole === 'admin' ? 'ADMINISTRATOR' : normalizedRole === 'jefe' ? 'SECTION CHIEF' : 'OPERATOR'}
+                </p>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
 
-            {/* Acciones del Header */}
-            <div className="flex items-center gap-5">
-              {/* Badge de estado */}
-              <span className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Sistema Activo
-              </span>
+      {/* Sidebar + Main Content */}
+      <div className="flex pt-[57px]">
+        {/* Backdrop móvil para cerrar sidebar */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-[9] bg-black/40 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
-              {/* Notificaciones */}
-              <button className="relative p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all duration-200 hover:scale-105 active:scale-95">
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white" />
-              </button>
-
-              {/* Perfil de usuario */}
-              <div className="flex items-center gap-4 pl-5 border-l border-slate-200">
-                <div className="text-right hidden md:block">
-                  <p className="text-sm font-semibold text-slate-800">{displayName}</p>
-                  <p className="text-xs text-slate-500 font-medium">{roleLabel}</p>
-                </div>
-                <div className="relative group cursor-pointer">
-                  {avatarSrc ? (
-                    <img 
-                      src={avatarSrc} 
-                      alt="Avatar" 
-                      className="h-11 w-11 rounded-xl object-cover border-2 border-white shadow-sm group-hover:shadow-md transition-all duration-200" 
-                    />
-                  ) : (
-                    <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold text-sm flex items-center justify-center border-2 border-white shadow-sm group-hover:shadow-md transition-all duration-200 group-hover:scale-105">
-                      {initials}
-                    </div>
-                  )}
-                </div>
+        {/* Sidebar */}
+        <aside className={`
+          fixed lg:relative z-10
+          w-64 h-[calc(100vh-57px)] 
+          bg-[#F0F4F2] border-r border-[#E0E0E0]
+          transition-transform duration-300 ease-in-out
+          overflow-y-auto
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}>
+          <nav className="p-4 space-y-1">
+            <div className="mb-5 px-2 pt-2 pb-4 border-b border-[#D8E8E0]">
+              <div className="text-center text-[11px] font-mono text-[#1FA971]/70">
+                SO₃OH · NaOH · HCl
               </div>
-
-              {/* Botón de Ayuda */}
+            </div>
+            
+            {filteredNav.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setSidebarOpen(false)}
+                className={`
+                  flex items-center gap-3 px-4 py-2.5 rounded-lg
+                  transition-all font-mono text-sm
+                  ${location.pathname === item.path 
+                    ? 'bg-[#E8F5F0] text-[#157A55] border-l-[3px] border-[#1FA971] font-semibold pl-[13px]' 
+                    : 'text-stone-600 hover:text-[#1FA971] hover:bg-[#E8F5F0]/70'
+                  }
+                `}
+              >
+                {item.icon}
+                {item.label}
+              </Link>
+            ))}
+            
+            <div className="pt-4 mt-4 border-t border-[#D8E8E0]">
               <button
-                onClick={() => setShowHelpModal(true)}
-                className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold text-sm shadow-md shadow-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/30 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
+                onClick={handleLogout}
+                className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-all font-mono text-sm w-full"
               >
-                <HelpCircle className="h-4 w-4" />
-                <span className="hidden sm:inline">Centro de Ayuda</span>
+                <LogOut className="w-4 h-4" />
+                Cerrar Sesión
               </button>
             </div>
-          </div>
-        </header>
+          </nav>
+        </aside>
 
-        {/* Contenido Principal - Centrado y con espaciado generoso */}
-        <div className="flex-1 overflow-y-auto py-10 px-8">
-          <div className="max-w-7xl mx-auto w-full space-y-10">
-            {/* Welcome Banner limpio y profesional */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 p-10 text-white shadow-lg">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4" />
-              <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/4" />
-              
-              <div className="relative flex items-center justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 opacity-90">
-                    <Sparkles className="h-5 w-5" />
-                    <span className="text-sm font-medium tracking-wide">Panel Institucional</span>
-                  </div>
-                  <h1 className="text-4xl font-bold tracking-tight">¡Hola, {displayName}!</h1>
-                  <p className="text-emerald-50 text-lg leading-relaxed">
-                    {roleLabel} • Sistema de Gestión Integral SIGIRL
-                  </p>
-                </div>
-                <div className="hidden md:block">
-                  <div className="w-20 h-20 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-sm">
-                    <Sparkles className="h-10 w-10 text-white/70" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Children Content */}
-            <div className="space-y-8">
-              {children}
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {/* Modal de Ayuda */}
-      {showHelpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="sigirl-form-surface w-full max-w-2xl rounded-[28px] overflow-hidden animate-fade-in-up">
-            {/* Header del Modal */}
-            <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-md">
-                  <LifeBuoy className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-slate-800">Centro de Ayuda</h3>
-                  <p className="text-sm text-slate-500 mt-1">Reporta problemas o solicita asistencia técnica</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowHelpModal(false)}
-                className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all duration-200 active:scale-95"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Contenido del Modal */}
-            <div className="p-7 md:p-10 space-y-8">
-              {/* Tipo de solicitud */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <button
-                  onClick={() => setHelpForm({ ...helpForm, tipo: 'ayuda' })}
-                  className={`p-6 rounded-xl border-2 text-center transition-all duration-200 ${
-                    helpForm.tipo === 'ayuda'
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md'
-                      : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <div
-                    className={`w-12 h-12 rounded-xl mx-auto mb-3 flex items-center justify-center transition-colors ${
-                      helpForm.tipo === 'ayuda' ? 'bg-emerald-100' : 'bg-slate-100'
-                    }`}
-                  >
-                    <HelpCircle className={`h-6 w-6 ${helpForm.tipo === 'ayuda' ? 'text-emerald-600' : 'text-slate-500'}`} />
-                  </div>
-                  <span className="text-sm font-semibold">Solicitar Ayuda</span>
-                </button>
-                <button
-                  onClick={() => setHelpForm({ ...helpForm, tipo: 'problema' })}
-                  className={`p-6 rounded-xl border-2 text-center transition-all duration-200 ${
-                    helpForm.tipo === 'problema'
-                      ? 'border-rose-500 bg-rose-50 text-rose-700 shadow-md'
-                      : 'border-slate-200 hover:border-rose-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <div
-                    className={`w-12 h-12 rounded-xl mx-auto mb-3 flex items-center justify-center transition-colors ${
-                      helpForm.tipo === 'problema' ? 'bg-rose-100' : 'bg-slate-100'
-                    }`}
-                  >
-                    <AlertCircle className={`h-6 w-6 ${helpForm.tipo === 'problema' ? 'text-rose-600' : 'text-slate-500'}`} />
-                  </div>
-                  <span className="text-sm font-semibold">Reportar Problema</span>
-                </button>
-              </div>
-
-              {/* Prioridad */}
-              <div className="space-y-3">
-                <label className="block text-sm font-semibold text-slate-700">Nivel de Prioridad</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {['baja', 'media', 'alta'].map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setHelpForm({ ...helpForm, prioridad: p })}
-                      className={`flex-1 py-3 px-4 rounded-xl text-sm font-semibold capitalize transition-all duration-200 ${
-                        helpForm.prioridad === p
-                          ? p === 'alta'
-                            ? 'bg-rose-500 text-white shadow-md shadow-rose-500/25 scale-105'
-                            : p === 'media'
-                              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/25 scale-105'
-                              : 'bg-blue-500 text-white shadow-md shadow-blue-500/25 scale-105'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Descripción */}
-              <div className="space-y-3">
-                <label className="block text-sm font-semibold text-slate-700">
-                  Descripción detallada
-                </label>
-                <textarea
-                  value={helpForm.descripcion}
-                  onChange={(e) => setHelpForm({ ...helpForm, descripcion: e.target.value })}
-                  placeholder="Describe detalladamente tu solicitud o el problema encontrado..."
-                  rows={5}
-                  className="sigirl-form-control sigirl-form-textarea"
-                />
-              </div>
-            </div>
-
-            {/* Footer del Modal */}
-            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 px-8 py-6 bg-slate-50 border-t border-slate-100">
-              <button 
-                onClick={() => setShowHelpModal(false)}
-                className="sigirl-btn-secondary w-full sm:w-auto text-sm"
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={handleHelpSubmit}
-                className="sigirl-btn-primary w-full sm:w-auto text-sm"
-              >
-                Enviar Reporte
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        {/* Main Content */}
+        <main className="flex-1 min-w-0 p-3 sm:p-5 lg:p-6 overflow-auto">
+          {children}
+        </main>
+      </div>
     </div>
   );
 };

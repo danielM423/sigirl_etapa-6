@@ -1,8 +1,4 @@
-// Archivo raíz de navegación del frontend.
-// Aquí se definen todas las rutas públicas, protegidas y redirecciones por rol.
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
 import { UserProvider } from './context/UserContext';
 import ProtectedRouteByRole from './components/ProtectedRouteByRole';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -15,31 +11,19 @@ import Register from './pages/Register';
 import UsuarioDashboard from './pages/UsuarioDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import JefeSuperiorDashboard from './pages/JefeSuperiorDashboard';
-import ProfileSettings from './pages/ProfileSettings';
+
+// Perfil de usuario
+import Perfil from './pages/Perfil';
+import Usuarios from './pages/Usuarios';
+import Alertas from './pages/Alertas';
+import Reportes from './pages/Reportes';
 
 // Páginas antiguas (mantener compatibilidad)
 import Dashboard from './pages/Dashboard';
 import Inventario from './pages/Inventario';
 import Pedidos from './pages/pedidos';
 
-// Redirige automáticamente al usuario al panel correcto según su rol guardado.
-const RoleBasedRedirect = ({ adminTo, jefeTo, usuarioTo }) => {
-  const storedRole = localStorage.getItem('role');
-  const normalizedRole = storedRole === 'jefe_superior' ? 'jefe' : storedRole;
-
-  if (normalizedRole === 'admin') {
-    return <Navigate to={adminTo} replace />;
-  }
-
-  if (normalizedRole === 'jefe') {
-    return <Navigate to={jefeTo} replace />;
-  }
-
-  return <Navigate to={usuarioTo} replace />;
-};
-
 function App() {
-  // Se monta el router principal y se envuelve todo con el proveedor de usuario.
   return (
     <Router>
       {/* UserProvider envuelve toda la app para que cualquier vista
@@ -75,30 +59,6 @@ function App() {
               </ProtectedRouteByRole>
             }
           />
-          <Route
-            path="/usuario/perfil"
-            element={
-              <ProtectedRouteByRole requiredRoles={['usuario']}>
-                <ProfileSettings />
-              </ProtectedRouteByRole>
-            }
-          />
-          <Route
-            path="/admin/perfil"
-            element={
-              <ProtectedRouteByRole requiredRoles={['admin']}>
-                <ProfileSettings />
-              </ProtectedRouteByRole>
-            }
-          />
-          <Route
-            path="/jefe/perfil"
-            element={
-              <ProtectedRouteByRole requiredRoles={['jefe']}>
-                <ProfileSettings />
-              </ProtectedRouteByRole>
-            }
-          />
 
           {/* Rutas antiguas (compatibilidad) */}
           <Route
@@ -117,8 +77,7 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/pedidos"
+          <Route path="/pedidos"
             element={
               <ProtectedRoute>
                 <Pedidos />
@@ -129,46 +88,38 @@ function App() {
             path="/perfil"
             element={
               <ProtectedRoute>
-                <ProfileSettings />
+                <Perfil />
               </ProtectedRoute>
             }
           />
           <Route
             path="/usuarios"
             element={
-              <ProtectedRoute>
-                <RoleBasedRedirect adminTo="/register" jefeTo="/jefe?tab=usuarios" usuarioTo="/usuario" />
-              </ProtectedRoute>
+              <ProtectedRouteByRole requiredRoles={['admin', 'jefe']}>
+                <Usuarios />
+              </ProtectedRouteByRole>
             }
           />
           <Route
             path="/alertas"
             element={
-              <ProtectedRoute>
-                <RoleBasedRedirect adminTo="/admin?tab=alertas" jefeTo="/jefe?tab=alertas" usuarioTo="/usuario" />
-              </ProtectedRoute>
+              <ProtectedRouteByRole requiredRoles={['admin', 'jefe']}>
+                <Alertas />
+              </ProtectedRouteByRole>
             }
           />
           <Route
             path="/reportes"
             element={
-              <ProtectedRoute>
-                <RoleBasedRedirect adminTo="/dashboard" jefeTo="/dashboard" usuarioTo="/usuario" />
-              </ProtectedRoute>
+              <ProtectedRouteByRole requiredRoles={['admin', 'jefe']}>
+                <Reportes />
+              </ProtectedRouteByRole>
             }
           />
 
           {/* Redirección por defecto */}
           <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>
-        <ToastContainer
-          position="top-right"
-          autoClose={2800}
-          theme="colored"
-          newestOnTop
-          pauseOnHover
-          draggable
-        />
       </UserProvider>
     </Router>
   );
