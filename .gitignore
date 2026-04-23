@@ -20,9 +20,9 @@ node_modules/
 .env
 sigirl/.env
 
-# Build del frontend
-frontend/dist/
-dist/
+# Build del frontend — se incluye en el repo para que Render pueda servirlo
+# frontend/dist/
+# dist/
 
 # Archivos de sistema
 .DS_Store

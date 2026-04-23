@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: sigirl
+    runtime: python
+    buildCommand: pip install -r sigirl/sigirl/requirements.txt && cd sigirl && python manage.py collectstatic --noinput
+    startCommand: cd sigirl && python manage.py migrate --noinput && gunicorn sigirl.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com,localhost"
+      - key: CORS_ALLOW_ALL_ORIGINS
+        value: "False"

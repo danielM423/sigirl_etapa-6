@@ -144,6 +144,9 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 FRONTEND_DIR = BASE_DIR.parent / 'frontend' / 'dist'
 TEMPLATES[0]['DIRS'] = [FRONTEND_DIR]
 
+# WhiteNoise sirve los assets de React desde la raíz (/assets/xxx.js)
+WHITENOISE_ROOT = FRONTEND_DIR
+
 # ── CORS ─────────────────────────────────────────────────────────
 # En desarrollo: True  |  En producción: False (usar CORS_ALLOWED_ORIGINS)
 CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'True') == 'True'
