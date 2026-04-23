@@ -114,6 +114,7 @@ const AdminDashboard = () => {
   const [showModalAlerta, setShowModalAlerta] = useState(false);
   const [formAlerta, setFormAlerta] = useState({ titulo: '', descripcion: '', prioridad: 'media', remitente: 'Admin' });
   const [pedidoToReject, setPedidoToReject] = useState(null);
+  const [pedidoModal, setPedidoModal] = useState(null);
 
   const changeTab = (tab) => setSearchParams({ tab });
 
@@ -229,15 +230,7 @@ const AdminDashboard = () => {
   };
 
   const handleVerPedido = (pedido) => {
-    const lines = [
-      `Código: ${pedido.codigo}`, `Solicitante: ${pedido.solicitante}`,
-      `Producto: ${pedido.producto}`, `Cantidad: ${pedido.cantidad}`,
-      `Departamento: ${pedido.departamento}`, `Estado: ${pedido.estado}`,
-      pedido.evaluacion_seguridad?.reactivoCritico ? `Puntaje seguridad: ${pedido.evaluacion_seguridad.puntaje}/${pedido.evaluacion_seguridad.puntajeMinimo}` : null,
-      pedido.observaciones ? `Observaciones: ${pedido.observaciones}` : null,
-      pedido.motivo_rechazo ? `Motivo rechazo: ${pedido.motivo_rechazo}` : null,
-    ].filter(Boolean);
-    toast.info(<div className="text-sm font-mono"><p className="font-bold mb-2 text-[#1FA971]">DETALLE PEDIDO</p><div className="space-y-1">{lines.map((l, i) => <p key={i} className="text-stone-600">{l}</p>)}</div></div>, { autoClose: 8000 });
+    setPedidoModal(pedido);
   };
 
   // Filtros
@@ -275,9 +268,35 @@ const AdminDashboard = () => {
     : Object.entries(filteredAlertas.reduce((acc,a)=>{ acc[a.prioridad]=(acc[a.prioridad]||0)+1; return acc; },{})).map(([name,value])=>({name,value}));
 
   const activityItems = [
-    ...pedidos.slice(0,5).map(p=>({ id:`pedido-${p.id}`, title:`${p.codigo} · ${p.estado}`, detail:`${p.solicitante} solicitó ${p.producto} (${p.cantidad})`, date:p.fecha_respuesta||p.fecha_solicitud })),
-    ...alertas.slice(0,3).map(a=>({ id:`alerta-${a.id}`, title:a.titulo, detail:a.descripcion, date:a.fecha })),
-  ].slice(0,7);
+    ...pedidos.slice(0, 5).map((p) => {
+      const badgeMap = {
+        aprobado:  { badge: 'Aprobado',  badgeCls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+        rechazado: { badge: 'Rechazado', badgeCls: 'bg-rose-100 text-rose-700 border-rose-200' },
+        pendiente: { badge: 'Pendiente', badgeCls: 'bg-amber-100 text-amber-700 border-amber-200' },
+      };
+      return {
+        id: `pedido-${p.id}`,
+        title: `${p.codigo} · ${p.producto}`,
+        detail: `${p.solicitante} solicitó ${p.cantidad} u. de ${p.producto}`,
+        date: p.fecha_respuesta || p.fecha_solicitud,
+        ...(badgeMap[p.estado] || { badge: p.estado, badgeCls: 'bg-stone-100 text-stone-500 border-stone-200' }),
+      };
+    }),
+    ...alertas.slice(0, 3).map((a) => {
+      const prioMap = {
+        alta:  { badge: '⬆ Alta',  badgeCls: 'bg-rose-100 text-rose-700 border-rose-200' },
+        media: { badge: '→ Media', badgeCls: 'bg-amber-100 text-amber-700 border-amber-200' },
+        baja:  { badge: '⬇ Baja',  badgeCls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+      };
+      return {
+        id: `alerta-${a.id}`,
+        title: a.titulo,
+        detail: `${a.descripcion || a.mensaje || 'Sin descripción'} · Por: ${a.remitente || 'SIGIRL'}`,
+        date: a.fecha,
+        ...(prioMap[a.prioridad] || {}),
+      };
+    }),
+  ].slice(0, 7);
 
   const handleExportExcel = () => {
     if (activeTab === 'inventario') {
@@ -674,6 +693,50 @@ const AdminDashboard = () => {
         )}
 
       </div>
+
+        {/* ── MODAL DETALLE PEDIDO ──────────────────────────────── */}
+        {pedidoModal && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-lg bg-white border border-[#E0E0E0] rounded-xl overflow-hidden shadow-2xl">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0] bg-[#E8F5F0]">
+                <div>
+                  <h2 className="text-sm font-mono font-bold text-[#157A55] uppercase tracking-wider">DETALLE DEL PEDIDO</h2>
+                  <p className="text-[10px] font-mono text-stone-500 mt-0.5">{pedidoModal.codigo}</p>
+                </div>
+                <button onClick={() => setPedidoModal(null)} className="p-1.5 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors">
+                  <XCircle className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-6 space-y-3">
+                {[
+                  { label: 'Código', value: pedidoModal.codigo },
+                  { label: 'Solicitante', value: pedidoModal.solicitante },
+                  { label: 'Producto', value: pedidoModal.producto },
+                  { label: 'Cantidad', value: pedidoModal.cantidad },
+                  { label: 'Departamento', value: pedidoModal.departamento },
+                  { label: 'Prioridad', value: pedidoModal.prioridad },
+                  { label: 'Estado', value: pedidoModal.estado },
+                  { label: 'Fecha solicitud', value: pedidoModal.fecha_solicitud },
+                  pedidoModal.observaciones && { label: 'Observaciones', value: pedidoModal.observaciones },
+                  pedidoModal.motivo_rechazo && { label: 'Motivo rechazo', value: pedidoModal.motivo_rechazo },
+                  pedidoModal.evaluacion_seguridad?.reactivoCritico && {
+                    label: 'Puntaje seguridad',
+                    value: `${pedidoModal.evaluacion_seguridad.puntaje}/${pedidoModal.evaluacion_seguridad.puntajeMinimo} — ${pedidoModal.evaluacion_seguridad.aprobado ? 'Aprobado' : 'Insuficiente'}`,
+                  },
+                ].filter(Boolean).map((row) => (
+                  <div key={row.label} className="flex items-start gap-3 bg-stone-50 border border-[#E0E0E0] rounded-lg px-4 py-2.5">
+                    <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider w-28 shrink-0 pt-0.5">{row.label}</span>
+                    <span className="text-sm font-mono text-stone-700 break-all">{row.value ?? '—'}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+                <button onClick={() => setPedidoModal(null)} className="px-4 py-2 rounded text-xs font-mono font-bold bg-[#1FA971] text-white hover:bg-[#157A55] transition-colors">Cerrar</button>
+              </div>
+            </div>
+          </div>
+        )}
+
     </Layout>
   );
 };

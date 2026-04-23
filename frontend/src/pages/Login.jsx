@@ -76,15 +76,44 @@ function Login() {
       <div className="relative z-10 w-full max-w-[480px]">
         {/* Logo y título */}
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 rounded-lg bg-emerald-100 border border-emerald-200 mb-4">
+          {/* Ícono del frasco */}
+          <div className="inline-flex p-3 rounded-2xl bg-gradient-to-br from-[#E8F5F0] to-emerald-100 border border-[#1FA971]/30 shadow-[0_4px_20px_rgba(31,169,113,0.18)] mb-5">
             <FlaskConical className="w-12 h-12 text-[#1FA971]" />
           </div>
-          <h1 className="text-xl font-bold tracking-wider text-[#157A55] font-mono">SIGIRL</h1>
-          <p className="text-[10px] text-stone-500 font-mono mt-1 tracking-wider">
-            SISTEMA DE GESTIÓN DE INVENTARIOS Y REACTIVOS
+
+          {/* SIGIRL con gradiente y brillo */}
+          <h1 className="text-4xl font-extrabold font-mono tracking-[0.18em] bg-gradient-to-r from-[#157A55] via-[#1FA971] to-emerald-400 bg-clip-text text-transparent drop-shadow-sm leading-none mb-1">
+            SIGIRL
+          </h1>
+
+          {/* Tagline principal */}
+          <p className="text-[11px] font-mono font-semibold text-stone-600 tracking-wide mt-3 leading-relaxed px-2">
+            Gestionamos hoy los recursos que impulsan<br />el conocimiento del mañana.
           </p>
-          <div className="inline-block mt-4 px-4 py-1.5 font-serif text-sm font-semibold text-[#157A55] bg-[#E8F5F0] rounded-md border-l-[3px] border-[#1FA971]">
-            SO₃OH · NaOH · HCl · C₂H₅OH
+
+          {/* Subtexto */}
+          <p className="text-[9px] font-mono text-stone-400 mt-2 tracking-wider leading-relaxed px-4">
+            Control preciso de reactivos · Seguridad garantizada · Ciencia que transforma.
+          </p>
+
+          {/* Píldoras de beneficios */}
+          <div className="flex flex-wrap justify-center gap-1.5 mt-4 px-2">
+            {['Inventario inteligente', 'Trazabilidad segura', 'Datos en tiempo real', 'Ciencia en equipo'].map((b) => (
+              <span key={b} className="px-2.5 py-0.5 rounded-full text-[8px] font-mono font-bold bg-[#E8F5F0] text-[#157A55] border border-[#1FA971]/25 tracking-wide">
+                {b}
+              </span>
+            ))}
+          </div>
+
+          {/* Fórmula decorativa */}
+          <div className="inline-flex items-center gap-2 mt-4 px-5 py-2 rounded-lg bg-white border border-[#E0E0E0] shadow-sm">
+            <span className="text-[10px] font-mono font-bold text-stone-400 tracking-widest">SO₂OH</span>
+            <span className="text-[#1FA971] font-mono text-xs">·</span>
+            <span className="text-[10px] font-mono font-bold text-[#1FA971] tracking-widest">NaOH</span>
+            <span className="text-[#1FA971] font-mono text-xs">·</span>
+            <span className="text-[10px] font-mono font-bold text-stone-400 tracking-widest">HCl</span>
+            <span className="mx-2 w-px h-3 bg-stone-200" />
+            <span className="text-[9px] font-mono text-amber-500 font-bold tracking-wider">2H₂O → 2H₂ + O₂</span>
           </div>
         </div>
 

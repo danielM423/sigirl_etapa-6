@@ -71,6 +71,10 @@ export const createUsuario = (data)     => api.post('usuarios/', data);
 export const updateUsuario = (id, data) => api.patch(`usuarios/${id}/`, data);
 export const deleteUsuario = (id)       => api.delete(`usuarios/${id}/`);
 
+// ── Movimientos ───────────────────────────────────────────
+export const getMovimientos    = ()         => api.get('movimientos/');
+export const createMovimiento  = (data)     => api.post('movimientos/', data);
+
 // ── Auditoría ──────────────────────────────────────────────
 export const getAuditoria = (params = {}) => api.get('auditoria/', { params });
 

@@ -15,3 +15,18 @@ db.sqlite3
 
 # Node modules (si usas Node.js/React)
 node_modules/
+
+# Variables de entorno — NUNCA subir al repo
+.env
+sigirl/.env
+
+# Build del frontend
+frontend/dist/
+dist/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

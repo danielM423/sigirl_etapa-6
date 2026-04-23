@@ -79,6 +79,14 @@ class Pedido(models.Model):
         ('pendiente', 'Pendiente'),
         ('aprobado', 'Aprobado'),
         ('rechazado', 'Rechazado'),
+        ('entregado', 'Entregado'),
+    ]
+
+    CONDICIONES_ENTREGA = [
+        ('completa', 'Entrega completa — sin observaciones'),
+        ('parcial', 'Entrega parcial — cantidad reducida'),
+        ('observaciones', 'Con observaciones — requiere seguimiento'),
+        ('urgente', 'Urgente — verificación necesaria'),
     ]
 
     usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pedidos')
@@ -95,6 +103,11 @@ class Pedido(models.Model):
     motivo_rechazo = models.TextField(blank=True, null=True)
     evaluacion_seguridad = models.JSONField(blank=True, null=True)
     creado_por = models.CharField(max_length=150, blank=True, null=True)
+    # Campos de entrega
+    fecha_entrega = models.DateField(blank=True, null=True)
+    condicion_entrega = models.CharField(max_length=20, choices=CONDICIONES_ENTREGA, blank=True, null=True)
+    responsable_entrega = models.CharField(max_length=150, blank=True, null=True)
+    notas_entrega = models.TextField(blank=True, null=True)
 
     class Meta:
         ordering = ['-fecha_solicitud', '-id']
@@ -142,7 +155,7 @@ class Alerta(models.Model):
     tipo = models.CharField(max_length=50, choices=TIPOS, default='otro')
     producto = models.ForeignKey(Producto, on_delete=models.CASCADE, null=True, blank=True)
     titulo = models.CharField(max_length=200)
-    mensaje = models.TextField()
+    mensaje = models.TextField(blank=True, default='')
     descripcion = models.TextField(blank=True)
     remitente = models.CharField(max_length=100, blank=True)
     prioridad = models.CharField(max_length=20, choices=PRIORIDADES, default='media')

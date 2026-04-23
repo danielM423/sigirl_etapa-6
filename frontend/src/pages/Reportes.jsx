@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
-import { Bell, ClipboardList, Package, BarChart3 } from 'lucide-react';
+import { Bell, ClipboardList, Package, BarChart3, Info } from 'lucide-react';
 import Layout from '../components/Layout';
 import ReportPanel from '../components/ReportPanel';
 import { getAlertas, getPedidos, getProductos } from '../services/api';
@@ -69,13 +69,48 @@ const Reportes = () => {
   }, [alertas, pedidos, productos, tab]);
 
   const activity = useMemo(() => {
+    const estadoBadge = (estado) => {
+      if (estado === 'aprobado')  return { badge: 'Aprobado',  badgeCls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+      if (estado === 'rechazado') return { badge: 'Rechazado', badgeCls: 'bg-rose-100 text-rose-700 border-rose-200' };
+      if (estado === 'pendiente') return { badge: 'Pendiente', badgeCls: 'bg-amber-100 text-amber-700 border-amber-200' };
+      return { badge: estado, badgeCls: 'bg-stone-100 text-stone-500 border-stone-200' };
+    };
+    const stockBadge = (item) => {
+      if (item.estado === 'agotado')    return { badge: 'Agotado',    badgeCls: 'bg-rose-100 text-rose-700 border-rose-200' };
+      if (item.estado === 'bajo_stock') return { badge: 'Bajo stock', badgeCls: 'bg-amber-100 text-amber-700 border-amber-200' };
+      return { badge: 'En stock', badgeCls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+    };
+    const prioridadBadge = (p) => {
+      if (p === 'alta')  return { badge: '⬆ Alta',  badgeCls: 'bg-rose-100 text-rose-700 border-rose-200' };
+      if (p === 'baja')  return { badge: '⬇ Baja',  badgeCls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+      return { badge: '→ Media', badgeCls: 'bg-amber-100 text-amber-700 border-amber-200' };
+    };
+
     if (tab === 'inventario') {
-      return productos.slice(0, 5).map((item) => ({ id: `producto-${item.id}`, title: item.nombre, detail: `${item.cantidad} unidades en ${item.ubicacion || 'sin ubicación'}`, date: item.ultima_actualizacion }));
+      return productos.slice(0, 6).map((item) => ({
+        id: `producto-${item.id}`,
+        title: item.nombre,
+        detail: `${item.cantidad} u. disponibles · Ubicación: ${item.ubicacion || 'sin especificar'} · Mín. ${item.umbral_minimo || '—'}`,
+        date: item.ultima_actualizacion || item.updated_at,
+        ...stockBadge(item),
+      }));
     }
     if (tab === 'pedidos') {
-      return pedidos.slice(0, 5).map((item) => ({ id: `pedido-${item.id}`, title: item.codigo || `PED-${item.id}`, detail: `${item.solicitante || item.usuario_username} · ${item.producto_nombre || item.producto}`, date: item.fecha_solicitud }));
+      return pedidos.slice(0, 6).map((item) => ({
+        id: `pedido-${item.id}`,
+        title: `${item.codigo || `PED-${item.id}`} · ${item.producto_nombre || item.producto}`,
+        detail: `${item.solicitante || item.usuario_username || 'Usuario'} solicitó ${item.cantidad} u. de ${item.producto_nombre || item.producto}`,
+        date: item.fecha_respuesta || item.fecha_solicitud,
+        ...estadoBadge(item.estado),
+      }));
     }
-    return alertas.slice(0, 5).map((item) => ({ id: `alerta-${item.id}`, title: item.titulo, detail: item.descripcion || item.mensaje, date: item.fecha }));
+    return alertas.slice(0, 6).map((item) => ({
+      id: `alerta-${item.id}`,
+      title: item.titulo,
+      detail: `${item.descripcion || item.mensaje || 'Sin descripción'} · Por: ${item.remitente || 'SIGIRL'}`,
+      date: item.fecha,
+      ...prioridadBadge(item.prioridad),
+    }));
   }, [alertas, pedidos, productos, tab]);
 
   const handleExportExcel = () => {
@@ -131,6 +166,96 @@ const Reportes = () => {
           onExportExcel={handleExportExcel}
           onExportPdf={handleExportPdf}
         />
+
+        {/* ── Descripción de gráficas ──────────────────────────── */}
+        <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 shadow-[0_2px_8px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center gap-2 mb-3">
+            <Info className="w-4 h-4 text-[#1FA971]" />
+            <span className="text-xs font-mono font-bold text-[#1FA971] uppercase tracking-wider">INTERPRETACIÓN DE LAS GRÁFICAS</span>
+          </div>
+          {tab === 'inventario' && (
+            <div className="space-y-2 text-sm font-mono text-stone-600">
+              <p><span className="font-bold text-stone-700">Gráfica de estado:</span> Muestra cuántos productos están en estado OK (stock adecuado), Bajo stock (por debajo del umbral mínimo) o Agotados (sin unidades disponibles). Permite identificar de inmediato cuántos reactivos requieren reposición urgente.</p>
+              <p><span className="font-bold text-stone-700">Gráfica por categoría:</span> Distribuye el total de productos según su categoría (Solventes, Reactivos, etc.). Ayuda a detectar qué áreas tienen mayor concentración de productos y cuáles podrían necesitar mayor seguimiento.</p>
+            </div>
+          )}
+          {tab === 'pedidos' && (
+            <div className="space-y-2 text-sm font-mono text-stone-600">
+              <p><span className="font-bold text-stone-700">Gráfica de estado:</span> Compara el número de pedidos Pendientes (en espera de revisión), Aprobados (autorizados y descontados del stock) y Rechazados (no autorizados con motivo registrado). Permite evaluar el flujo de aprobaciones.</p>
+              <p><span className="font-bold text-stone-700">Gráfica por prioridad:</span> Muestra cuántas solicitudes se clasificaron como Alta, Media o Baja prioridad. Un alto porcentaje de prioridad alta puede indicar escasez frecuente de reactivos críticos.</p>
+            </div>
+          )}
+          {tab === 'alertas' && (
+            <div className="space-y-2 text-sm font-mono text-stone-600">
+              <p><span className="font-bold text-stone-700">Gráfica de estado:</span> Indica cuántas alertas están Activas (sin resolver), Resueltas o marcadas de Alta prioridad. Una cantidad elevada de alertas activas requiere atención inmediata del equipo responsable.</p>
+              <p><span className="font-bold text-stone-700">Gráfica por prioridad:</span> Clasifica las alertas según su nivel de urgencia. Ayuda a priorizar la respuesta del personal de laboratorio y administrativo.</p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Listado detallado ────────────────────────────────── */}
+        <div className="bg-white border border-[#E0E0E0] rounded-xl overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.05)]">
+          <div className="px-5 py-3 border-b border-[#E0E0E0] bg-[#E8F5F0]">
+            <span className="text-xs font-mono font-bold text-[#157A55] uppercase tracking-wider">
+              {tab === 'inventario' ? `LISTADO DE INVENTARIO (${productos.length} registros)` : tab === 'pedidos' ? `LISTADO DE PEDIDOS (${pedidos.length} registros)` : `LISTADO DE ALERTAS (${alertas.length} registros)`}
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            {tab === 'inventario' && (
+              <table className="w-full">
+                <thead><tr className="border-b border-stone-200">{['Producto','Categoría','Cantidad','Umbral mín.','Ubicación','Estado'].map(h=><th key={h} className="px-4 py-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-stone-100">
+                  {productos.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-stone-400 font-mono text-sm">Sin datos</td></tr> : productos.map(item => (
+                    <tr key={item.id} className="hover:bg-[#E8F5F0]/40 transition-colors">
+                      <td className="px-4 py-3 text-sm font-mono font-semibold text-stone-700">{item.nombre}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-stone-500">{item.categoria_nombre || item.categoria || '—'}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-stone-600">{item.cantidad}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-stone-500">{item.umbral_minimo ?? item.minimo ?? '—'}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-stone-500">{item.ubicacion || '—'}</td>
+                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${item.estado==='ok'?'bg-[#E8F5F0] text-[#1FA971] border-[#1FA971]/25':item.estado==='bajo_stock'?'bg-amber-100 text-amber-400 border-amber-200':'bg-rose-100 text-rose-400 border-rose-200'}`}>{item.estado}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {tab === 'pedidos' && (
+              <table className="w-full">
+                <thead><tr className="border-b border-stone-200">{['Código','Solicitante','Producto','Cantidad','Prioridad','Estado','Fecha'].map(h=><th key={h} className="px-4 py-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-stone-100">
+                  {pedidos.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-stone-400 font-mono text-sm">Sin datos</td></tr> : pedidos.map(item => (
+                    <tr key={item.id} className="hover:bg-[#E8F5F0]/40 transition-colors">
+                      <td className="px-4 py-3 text-[11px] font-mono font-bold text-stone-600">{item.codigo}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-stone-500">{item.solicitante || item.usuario_username || '—'}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-stone-600">{item.producto_nombre || item.producto || '—'}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-stone-500">{item.cantidad}</td>
+                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${item.prioridad==='alta'?'bg-rose-100 text-rose-400 border-rose-200':item.prioridad==='media'?'bg-amber-100 text-amber-400 border-amber-200':'bg-[#E8F5F0] text-[#1FA971] border-[#1FA971]/25'}`}>{item.prioridad}</span></td>
+                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${item.estado==='aprobado'?'bg-[#E8F5F0] text-[#1FA971] border-[#1FA971]/25':item.estado==='rechazado'?'bg-rose-100 text-rose-400 border-rose-200':'bg-amber-100 text-amber-400 border-amber-200'}`}>{item.estado}</span></td>
+                      <td className="px-4 py-3 text-[11px] font-mono text-stone-400">{item.fecha_solicitud || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {tab === 'alertas' && (
+              <table className="w-full">
+                <thead><tr className="border-b border-stone-200">{['Título','Remitente','Prioridad','Estado','Descripción','Fecha'].map(h=><th key={h} className="px-4 py-3 text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider text-left">{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-stone-100">
+                  {alertas.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-stone-400 font-mono text-sm">Sin datos</td></tr> : alertas.map(item => (
+                    <tr key={item.id} className="hover:bg-[#E8F5F0]/40 transition-colors">
+                      <td className="px-4 py-3 text-sm font-mono font-semibold text-stone-700">{item.titulo}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-stone-500">{item.remitente || '—'}</td>
+                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${item.prioridad==='alta'?'bg-rose-100 text-rose-400 border-rose-200':item.prioridad==='media'?'bg-amber-100 text-amber-400 border-amber-200':'bg-[#E8F5F0] text-[#1FA971] border-[#1FA971]/25'}`}>{item.prioridad}</span></td>
+                      <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${item.estado==='resuelta'?'bg-[#E8F5F0] text-[#1FA971] border-[#1FA971]/25':'bg-amber-100 text-amber-400 border-amber-200'}`}>{item.estado || 'activa'}</span></td>
+                      <td className="px-4 py-3 text-sm font-mono text-stone-400 max-w-xs truncate">{item.descripcion || item.mensaje || '—'}</td>
+                      <td className="px-4 py-3 text-[11px] font-mono text-stone-400">{item.fecha || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
       </div>
     </Layout>
   );

@@ -1,5 +1,5 @@
 ﻿// Configuración de perfil del usuario - Estilo Laboratorio Oscuro
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -71,6 +71,7 @@ const ProfileSettings = () => {
   const [saving,    setSaving]   = useState(false);
   const [deleting,  setDeleting] = useState(false);
   const [chartReady,setChartReady] = useState(false);
+  const chartContainerRef = useRef(null);
   const [confirmText, setConfirmText] = useState('');
   const [preferences, setPreferences] = useState(DEFAULT_PREFS);
   const [actividadPedidos, setActividadPedidos] = useState([]);
@@ -86,7 +87,12 @@ const ProfileSettings = () => {
 
   const activityData = useMemo(() => {
     const months   = ['Ene','Feb','Mar','Abr','May','Jun'];
-    const fallback = [30, 45, 60, 55, 75, 90];
+    const DEMO = {
+      jefe:    [82, 97, 115, 108, 130, 144],
+      admin:   [54, 68,  91,  85, 102, 118],
+      usuario: [12, 20,  35,  28,  42,  50],
+    };
+    const fallback = DEMO[role] || DEMO.usuario;
     const username = (user?.username || form.username || '').toLowerCase();
     const propios  = actividadPedidos.filter(p => {
       const candidates = [p.solicitante, p.usuario_username].filter(Boolean).map(v=>String(v).toLowerCase());
@@ -98,9 +104,13 @@ const ProfileSettings = () => {
       const total = source.filter(p => String(p.fecha_solicitud||'').includes(`-${month}-`)).length;
       return { name, value: total > 0 ? total * 15 : fallback[idx] };
     });
-  }, [form.username, user?.username, actividadPedidos]);
+  }, [form.username, user?.username, role, actividadPedidos]);
 
   const applyProfileData = useCallback((data) => {
+    const avatar = data.profile?.avatar || '';
+    // Persistir avatar en localStorage para que el navbar lo lea
+    const uname = data.username || '';
+    if (uname) localStorage.setItem(`sigirl_avatar:${uname}`, avatar);
     setForm({
       username: data.username || '',
       first_name: data.first_name || '',
@@ -111,7 +121,7 @@ const ProfileSettings = () => {
       phone: data.profile?.phone || '',
       cargo: data.profile?.cargo || '',
       bio: data.profile?.bio || '',
-      avatar: data.profile?.avatar || '',
+      avatar,
     });
     setSavedProfile(data);
     setUser(data);
@@ -149,9 +159,16 @@ const ProfileSettings = () => {
   }, [preferences, form.username]);
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => setChartReady(true));
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
+    if (loading) return;
+    const el = chartContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) { setChartReady(true); ro.disconnect(); }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -212,6 +229,9 @@ const ProfileSettings = () => {
         },
       });
       applyProfileData(data);
+      // Guardar avatar en localStorage para que el navbar lo lea
+      const avatarKey = `sigirl_avatar:${form.username.trim()}`;
+      localStorage.setItem(avatarKey, form.avatar || '');
       toast.success('Perfil actualizado correctamente');
     } catch (err) {
       toast.error(err.response?.data?.username?.[0] || err.response?.data?.email?.[0] || 'No se pudo guardar el perfil');
@@ -272,9 +292,9 @@ const ProfileSettings = () => {
 
         {/* Activity chart */}
         <Section title="TU ACTIVIDAD" subtitle="Nivel de actividad en los últimos 6 meses" icon={<BarChart3 className="w-3.5 h-3.5 text-[#1FA971]" />}>
-          <div className="h-52 rounded-lg border border-[#E0E0E0] bg-stone-50 p-3">
+          <div ref={chartContainerRef} className="h-52 rounded-lg border border-[#E0E0E0] bg-stone-50 p-3">
             {chartReady && (
-              <ResponsiveContainer width="99%" height="100%" debounce={120}>
+              <ResponsiveContainer width="99%" height={180} debounce={120}>
                 <BarChart data={activityData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E0E0E0" vertical={false} />
                   <XAxis dataKey="name" tick={{ fill:'#64748b', fontSize:10, fontFamily:'monospace' }} axisLine={false} tickLine={false} />

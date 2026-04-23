@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { UserContext } from '../context/UserContext';
 import { 
@@ -24,6 +24,16 @@ const Layout = ({ children }) => {
 
   const isAdmin = normalizedRole === 'admin';
   const isJefe = normalizedRole === 'jefe';
+
+  // Avatar reactivo: se actualiza cuando cambia el usuario o la ruta
+  const username = user?.username || localStorage.getItem('username') || '';
+  const [avatarSrc, setAvatarSrc] = useState(() => localStorage.getItem(`sigirl_avatar:${username}`) || '');
+
+  // Re-leer avatar si el username o la ruta cambia (al volver de Perfil)
+  useEffect(() => {
+    const stored = localStorage.getItem(`sigirl_avatar:${username}`) || '';
+    setAvatarSrc(stored);
+  }, [username, location.pathname]);
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" />, roles: ['admin', 'jefe', 'usuario'] },
@@ -56,12 +66,16 @@ const Layout = ({ children }) => {
             </button>
             
             <Link to="/dashboard" className="flex items-center gap-3">
-              <div className="p-1.5 rounded-lg bg-[#E8F5F0] border border-[#1FA971]/20">
+              <div className="p-1.5 rounded-lg bg-[#E8F5F0] border border-[#1FA971]/20 shadow-sm">
                 <FlaskConical className="w-5 h-5 text-[#1FA971]" />
               </div>
               <div className="hidden sm:block">
-                <h1 className="text-sm font-bold tracking-wider text-emerald-700 font-mono">SIGIRL</h1>
-                <p className="text-[9px] text-stone-500 font-mono hidden md:block">v2.4.0 | Inventory Control</p>
+                <h1 className="text-base font-extrabold tracking-widest font-mono bg-gradient-to-r from-[#1FA971] via-[#157A55] to-emerald-400 bg-clip-text text-transparent leading-none">
+                  SIGIRL
+                </h1>
+                <p className="text-[8px] text-stone-400 font-mono hidden md:block leading-tight mt-0.5 max-w-[220px]">
+                  Sistema de Información para la Gestión de Investigación del Laboratorio
+                </p>
               </div>
             </Link>
           </div>
@@ -75,17 +89,24 @@ const Layout = ({ children }) => {
             <div className="w-px h-6 bg-stone-200 hidden md:block"></div>
             
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#E8F5F0] border-2 border-[#1FA971]/40 flex items-center justify-center">
-                <span className="text-xs font-bold text-[#157A55] font-mono">
-                  {user?.nombre?.charAt(0)?.toUpperCase() || 'U'}
-                </span>
+              {/* Avatar */}
+              <div className="w-9 h-9 rounded-full border-2 border-[#1FA971]/40 overflow-hidden flex-shrink-0 shadow-sm">
+                {avatarSrc ? (
+                  <img src={avatarSrc} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-[#E8F5F0] flex items-center justify-center">
+                    <span className="text-sm font-extrabold text-[#157A55] font-mono">
+                      {(user?.nombre || username || 'U').charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="hidden md:block">
-                <p className="text-xs font-medium text-stone-700 font-mono">
-                  {user?.nombre || 'Usuario'}
+                <p className="text-xs font-bold text-stone-700 font-mono leading-none">
+                  {user?.nombre || username || 'Usuario'}
                 </p>
-                <p className="text-[9px] text-stone-500 font-mono uppercase">
-                  {normalizedRole === 'admin' ? 'ADMINISTRATOR' : normalizedRole === 'jefe' ? 'SECTION CHIEF' : 'OPERATOR'}
+                <p className="text-[9px] text-[#1FA971] font-mono uppercase tracking-wider mt-0.5">
+                  {normalizedRole === 'admin' ? 'Administrador' : normalizedRole === 'jefe' ? 'Jefe Superior' : 'Usuario'}
                 </p>
               </div>
             </div>

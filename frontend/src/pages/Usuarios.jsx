@@ -38,6 +38,8 @@ const Usuarios = () => {
   const [filterRole, setFilterRole] = useState('todos');
   const [selectedUsuario, setSelectedUsuario] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [detailModal, setDetailModal] = useState(null);
   const [formUsuario, setFormUsuario] = useState({ username: '', nombreCompleto: '', email: '', departamento: '', rol: 'usuario', password: '' });
 
   const normalizeUsuario = (usuario) => ({
@@ -132,12 +134,16 @@ const Usuarios = () => {
     }
   };
 
-  const handleDelete = async (usuario) => {
-    if (!window.confirm(`¿Eliminar a ${usuario.username}?`)) return;
+  const handleDelete = (usuario) => {
+    setConfirmDelete(usuario);
+  };
+
+  const confirmDeleteUser = async () => {
     try {
-      await deleteUsuario(usuario.id);
-      setUsuarios((prev) => prev.filter((item) => item.id !== usuario.id));
-      toast.success('Usuario eliminado');
+      await deleteUsuario(confirmDelete.id);
+      setUsuarios((prev) => prev.filter((item) => item.id !== confirmDelete.id));
+      toast.success(`Usuario "${confirmDelete.username}" eliminado correctamente`);
+      setConfirmDelete(null);
     } catch (err) {
       toast.error(err.response?.data?.error || 'No se pudo eliminar el usuario');
     }
@@ -196,7 +202,7 @@ const Usuarios = () => {
                     <td className="py-3 pr-4 text-sm font-mono text-stone-500">{usuario.email || '—'}</td>
                     <td className="py-3 pr-4 text-sm font-mono text-stone-500">{usuario.departamento || '—'}</td>
                     <td className="py-3 pr-4"><span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${usuario.rol === 'jefe' ? 'bg-purple-100 text-purple-700 border-purple-200' : usuario.rol === 'admin' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>{usuario.rol}</span></td>
-                    <td className="py-3"><div className="flex items-center gap-1"><button onClick={() => toast.info(<div className="text-sm font-mono"><p className="font-bold mb-2 text-emerald-600">DETALLE USUARIO</p><div className="space-y-1 text-stone-600"><p>Usuario: {usuario.username}</p><p>Email: {usuario.email || '—'}</p><p>Departamento: {usuario.departamento || '—'}</p><p>Rol: {usuario.rol}</p><p>Total pedidos: {usuario.total_pedidos ?? 0}</p></div></div>, { autoClose: 7000 })} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Ver detalle"><Eye className="w-3.5 h-3.5" /></button><button onClick={() => openEdit(usuario)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Editar usuario"><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => handleDelete(usuario)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded transition-colors" title="Eliminar usuario"><Trash2 className="w-3.5 h-3.5" /></button></div></td>
+                    <td className="py-3"><div className="flex items-center gap-1"><button onClick={() => setDetailModal(usuario)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Ver detalle"><Eye className="w-3.5 h-3.5" /></button><button onClick={() => openEdit(usuario)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Editar usuario"><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => handleDelete(usuario)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded transition-colors" title="Eliminar usuario"><Trash2 className="w-3.5 h-3.5" /></button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -220,6 +226,65 @@ const Usuarios = () => {
             </div>
           </div>
         )}
+
+        {/* ── MODAL DETALLE USUARIO ─────────────────────────────── */}
+        {detailModal && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-white border border-[#E0E0E0] rounded-xl overflow-hidden shadow-2xl">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0] bg-blue-50">
+                <div>
+                  <h2 className="text-sm font-mono font-bold text-blue-700 uppercase tracking-wider">DETALLE DEL USUARIO</h2>
+                  <p className="text-[10px] font-mono text-stone-500 mt-0.5">{detailModal.username}</p>
+                </div>
+                <button onClick={() => setDetailModal(null)} className="p-1.5 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors">
+                  <XCircle className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-6 space-y-3">
+                {[
+                  { label: 'Usuario', value: detailModal.username },
+                  { label: 'Nombre', value: detailModal.nombre || detailModal.first_name ? `${detailModal.first_name || ''} ${detailModal.last_name || ''}`.trim() : '—' },
+                  { label: 'Email', value: detailModal.email || '—' },
+                  { label: 'Departamento', value: detailModal.departamento || '—' },
+                  { label: 'Rol', value: detailModal.rol },
+                  { label: 'Estado', value: detailModal.is_active !== false ? 'Activo' : 'Inactivo' },
+                  { label: 'Total pedidos', value: detailModal.total_pedidos ?? 0 },
+                ].map((row) => (
+                  <div key={row.label} className="flex items-center gap-3 bg-stone-50 border border-[#E0E0E0] rounded-lg px-4 py-2.5">
+                    <span className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-wider w-28 shrink-0">{row.label}</span>
+                    <span className="text-sm font-mono text-stone-700">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+                <button onClick={() => { setDetailModal(null); openEdit(detailModal); }} className="px-4 py-2 rounded text-xs font-mono font-bold border border-amber-200 text-amber-600 hover:bg-amber-50 transition-colors">Editar</button>
+                <button onClick={() => setDetailModal(null)} className="px-4 py-2 rounded text-xs font-mono font-bold bg-[#1FA971] text-white hover:bg-[#157A55] transition-colors">Cerrar</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── MODAL CONFIRMAR ELIMINACIÓN ───────────────────────── */}
+        {confirmDelete && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-white border border-[#E0E0E0] rounded-xl overflow-hidden shadow-2xl">
+              <div className="px-6 py-5 text-center">
+                <div className="w-12 h-12 rounded-full bg-rose-100 border border-rose-200 flex items-center justify-center mx-auto mb-4">
+                  <Trash2 className="w-5 h-5 text-rose-500" />
+                </div>
+                <h2 className="text-base font-bold font-mono text-stone-700 mb-1">Eliminar usuario</h2>
+                <p className="text-sm font-mono text-stone-500 mb-1">¿Estás seguro de que deseas eliminar a</p>
+                <p className="text-sm font-bold font-mono text-rose-500 mb-3">"{confirmDelete.username}"</p>
+                <p className="text-[11px] font-mono text-stone-400">Esta acción no se puede deshacer. Todos los datos del usuario serán eliminados permanentemente.</p>
+              </div>
+              <div className="flex gap-3 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+                <button onClick={() => setConfirmDelete(null)} className="flex-1 px-4 py-2 rounded text-xs font-mono font-bold border border-stone-200 text-stone-600 hover:text-stone-800 hover:border-stone-300 transition-colors">Cancelar</button>
+                <button onClick={confirmDeleteUser} className="flex-1 px-4 py-2 rounded text-xs font-mono font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors shadow-sm">Sí, eliminar</button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </Layout>
   );

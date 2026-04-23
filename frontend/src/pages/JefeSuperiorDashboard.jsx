@@ -98,6 +98,7 @@ const JefeSuperiorDashboard = () => {
   const [usuarios, setUsuarios] = useState([]);
   const [productos, setProductos] = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [chartsReady, setChartsReady] = useState(false);
 
   const [searchTerm, setSearchTerm]         = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -142,6 +143,7 @@ const JefeSuperiorDashboard = () => {
         console.error(err);
       } finally {
         setLoading(false);
+        requestAnimationFrame(() => setChartsReady(true));
       }
     };
     load();
@@ -160,11 +162,23 @@ const JefeSuperiorDashboard = () => {
       .finally(() => setAuditLoading(false));
   }, [activeTab, auditSearch, auditModulo]);
 
+  // ─── Filtros computados (deben ir antes de allPendientesIds) ────
+  const filteredPedidos = useMemo(() => pedidos.filter(p => {
+    const t = searchTerm.toLowerCase();
+    return (p.producto.toLowerCase().includes(t) || p.codigo?.toLowerCase().includes(t) || p.solicitante?.toLowerCase().includes(t))
+      && (filterStatus === 'todos' || p.estado === filterStatus);
+  }), [pedidos, searchTerm, filterStatus]);
+
+  const filteredUsuarios = useMemo(() => usuarios.filter(u => {
+    const t = userSearchTerm.toLowerCase();
+    return (u.username||u.nombre||'').toLowerCase().includes(t) || (u.email||'').toLowerCase().includes(t) || (u.department||u.departamento||'').toLowerCase().includes(t);
+  }), [usuarios, userSearchTerm]);
+
   // ─── Pedido handlers ──────────────────────────────────────────
   const [pedidoToReject, setPedidoToReject] = useState(null);
 
   // Selección masiva
-  const allPendientesIds = useMemo(() => filteredPedidos?.filter(p=>p.estado==='pendiente').map(p=>p.id) ?? [], []);
+  const allPendientesIds = useMemo(() => filteredPedidos?.filter(p=>p.estado==='pendiente').map(p=>p.id) ?? [], [filteredPedidos]);
   const toggleSelect = (id) => setSelectedPedidos(prev => { const s = new Set(prev); s.has(id)?s.delete(id):s.add(id); return s; });
   const toggleSelectAll = () => {
     const pendIds = (filteredPedidos||[]).filter(p=>p.estado==='pendiente').map(p=>p.id);
@@ -174,14 +188,20 @@ const JefeSuperiorDashboard = () => {
     if (!selectedPedidos.size) { toast.error('Selecciona al menos un pedido'); return; }
     setBulkLoading(true);
     try {
-      const updates = await Promise.all([...selectedPedidos].map(id => updatePedido(id, { estado })));
+      const results = await Promise.allSettled([...selectedPedidos].map(id => updatePedido(id, { estado })));
+      const fulfilled = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+      const rejected  = results.filter(r => r.status === 'rejected');
       setPedidos(prev => prev.map(p => {
-        const upd = updates.find(r => r.data.id === p.id);
+        const upd = fulfilled.find(r => r.data.id === p.id);
         return upd ? { ...p, ...upd.data, producto: upd.data.producto_nombre || upd.data.producto } : p;
       }));
       setSelectedPedidos(new Set());
-      toast.success(`${updates.length} pedido(s) ${estado === 'aprobado' ? 'aprobados' : 'rechazados'}`);
-    } catch { toast.error('Error en acción masiva'); }
+      if (fulfilled.length) toast.success(`${fulfilled.length} pedido(s) ${estado === 'aprobado' ? 'aprobados' : 'rechazados'}`);
+      if (rejected.length) {
+        const msg = rejected[0]?.reason?.response?.data?.error || 'Error en acción masiva';
+        toast.error(`${rejected.length} pedido(s) fallaron: ${msg}`);
+      }
+    } catch (err) { toast.error(err.response?.data?.error || 'Error en acción masiva'); }
     finally { setBulkLoading(false); }
   };
 
@@ -299,17 +319,6 @@ const JefeSuperiorDashboard = () => {
     [productos]
   );
 
-  const filteredPedidos = useMemo(() => pedidos.filter(p => {
-    const t = searchTerm.toLowerCase();
-    return (p.producto.toLowerCase().includes(t) || p.codigo?.toLowerCase().includes(t) || p.solicitante?.toLowerCase().includes(t))
-      && (filterStatus === 'todos' || p.estado === filterStatus);
-  }), [pedidos, searchTerm, filterStatus]);
-
-  const filteredUsuarios = useMemo(() => usuarios.filter(u => {
-    const t = userSearchTerm.toLowerCase();
-    return (u.username||u.nombre||'').toLowerCase().includes(t) || (u.email||'').toLowerCase().includes(t) || (u.department||u.departamento||'').toLowerCase().includes(t);
-  }), [usuarios, userSearchTerm]);
-
   const TABS = [
     { key:'estadisticas', label:'ESTADÍSTICAS', icon:<BarChart3 className="w-3.5 h-3.5" /> },
     { key:'pedidos',      label:'PEDIDOS',      icon:<FlaskConical className="w-3.5 h-3.5" /> },
@@ -382,7 +391,8 @@ const JefeSuperiorDashboard = () => {
                   <span className="text-xs font-mono font-bold text-[#1FA971] uppercase tracking-wider">PEDIDOS POR ESTADO</span>
                 </div>
                 <div className="p-5 h-64">
-                  <ResponsiveContainer width="100%" height="100%">
+                  {chartsReady && (
+                  <ResponsiveContainer width="100%" height={216}>
                     <BarChart data={barData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#E0E0E0" vertical={false} />
                       <XAxis dataKey="name" tick={{ fill:'#64748b', fontSize:10, fontFamily:'monospace' }} axisLine={false} tickLine={false} />
@@ -392,6 +402,7 @@ const JefeSuperiorDashboard = () => {
                       <Bar dataKey="value" fill="#22c55e" radius={[4,4,0,0]} maxBarSize={50} />
                     </BarChart>
                   </ResponsiveContainer>
+                  )}
                 </div>
               </div>
 
@@ -402,7 +413,8 @@ const JefeSuperiorDashboard = () => {
                 </div>
                 <div className="p-5 flex items-center justify-center gap-6 h-64">
                   <div className="relative w-44 h-44">
-                    <ResponsiveContainer width="100%" height="100%">
+                    {chartsReady && (
+                    <ResponsiveContainer width={176} height={176}>
                       <PieChart>
                         <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={75} paddingAngle={3} stroke="none">
                           {donutData.map((d,i) => <Cell key={i} fill={d.fill} />)}
@@ -410,6 +422,7 @@ const JefeSuperiorDashboard = () => {
                         <Tooltip content={<CustomTooltip />} />
                       </PieChart>
                     </ResponsiveContainer>
+                    )}
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="text-center">
                         <p className="text-2xl font-bold font-mono text-[#1FA971]">{stats.tasaAprobacion}%</p>
@@ -437,7 +450,8 @@ const JefeSuperiorDashboard = () => {
               </div>
               <div className="p-5 h-64">
                 {stockChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  chartsReady && (
+                  <ResponsiveContainer width="100%" height={216}>
                     <BarChart data={stockChartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#E0E0E0" vertical={false} />
                       <XAxis dataKey="name" tick={{ fill:'#64748b', fontSize:9, fontFamily:'monospace' }} axisLine={false} tickLine={false} />
@@ -447,6 +461,7 @@ const JefeSuperiorDashboard = () => {
                       <Bar dataKey="minimo" name="Umbral mínimo" fill="#f59e0b" radius={[4,4,0,0]} maxBarSize={30} />
                     </BarChart>
                   </ResponsiveContainer>
+                  )
                 ) : (
                   <div className="flex items-center justify-center h-full text-stone-400 font-mono text-sm">Sin datos de inventario</div>
                 )}

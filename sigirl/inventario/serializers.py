@@ -25,6 +25,9 @@ class ProductoSerializer(serializers.ModelSerializer):
     por_vencer = serializers.SerializerMethodField()
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
     categoria_texto = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    categoria = serializers.PrimaryKeyRelatedField(
+        queryset=Categoria.objects.all(), required=False, allow_null=True
+    )
     umbral_minimo = serializers.IntegerField(source='minimo', required=False)
     estado = serializers.CharField(read_only=True)
 
@@ -38,7 +41,6 @@ class ProductoSerializer(serializers.ModelSerializer):
             'categoria_nombre',
             'categoria_texto',
             'cantidad',
-            'minimo',
             'umbral_minimo',
             'ubicacion',
             'fecha_vencimiento',
@@ -141,6 +143,8 @@ class PedidoSerializer(serializers.ModelSerializer):
 
 class AlertaSerializer(serializers.ModelSerializer):
     estado = serializers.SerializerMethodField()
+    mensaje = serializers.CharField(required=False, allow_blank=True, default='')
+    tipo = serializers.CharField(required=False, default='otro')
 
     class Meta:
         model = Alerta

@@ -1,7 +1,8 @@
 ﻿// Vista de pedidos — Tema Laboratorio Oscuro
 import { useState, useEffect, useMemo, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Search, ChevronDown, Plus, Eye, CheckCircle2, XCircle, ShoppingCart, Clock, AlertCircle, Download } from 'lucide-react';
+import { Search, ChevronDown, Plus, Eye, CheckCircle2, XCircle, ShoppingCart, Clock, AlertCircle, Download, ArrowLeft, Truck } from 'lucide-react';
 import Layout from '../components/Layout';
 import RejectPedidoModal from '../components/RejectPedidoModal';
 import { UserContext } from '../context/UserContext';
@@ -59,8 +60,10 @@ const LabSection = ({ title, children }) => (
 
 const Pedidos = () => {
   const { user, role } = useContext(UserContext);
+  const navigate       = useNavigate();
   const normalizedRole = role === 'jefe_superior' ? 'jefe' : role;
   const canManage = normalizedRole === 'admin' || normalizedRole === 'jefe';
+  const dashboardPath  = normalizedRole === 'admin' ? '/admin' : normalizedRole === 'jefe' ? '/jefe' : '/usuario';
   const currentUsername = (user?.username || localStorage.getItem('username') || 'usuario').toLowerCase();
 
   const [pedidos, setPedidos] = useState([]);
@@ -72,6 +75,9 @@ const Pedidos = () => {
   const [showModal, setShowModal] = useState(false);
   const [formPedido, setFormPedido] = useState({ productoId: '', cantidad: '', prioridad: 'media', observaciones: '' });
   const [pedidoToReject, setPedidoToReject] = useState(null);
+  const [pedidoDetalle, setPedidoDetalle] = useState(null);
+  const [entregadoModal, setEntregadoModal] = useState(null);
+  const [formEntrega, setFormEntrega] = useState({ fecha_entrega: '', condicion_entrega: 'completa', responsable_entrega: '', notas_entrega: '' });
 
   const normalizePedido = (p) => ({
     ...p,
@@ -112,6 +118,7 @@ const Pedidos = () => {
     pendientes: visiblePedidos.filter((p) => p.estado === 'pendiente').length,
     aprobados: visiblePedidos.filter((p) => p.estado === 'aprobado').length,
     rechazados: visiblePedidos.filter((p) => p.estado === 'rechazado').length,
+    entregados: visiblePedidos.filter((p) => p.estado === 'entregado').length,
   };
 
   const handleGuardarPedido = async () => {
@@ -146,6 +153,25 @@ const Pedidos = () => {
     } catch (err) { toast.error(err.response?.data?.error || 'Error al rechazar'); }
   };
 
+  const handleMarcarEntregado = async () => {
+    if (!entregadoModal) return;
+    if (!formEntrega.fecha_entrega) { toast.error('La fecha de entrega es obligatoria'); return; }
+    if (!formEntrega.responsable_entrega.trim()) { toast.error('El responsable de entrega es obligatorio'); return; }
+    try {
+      const { data } = await updatePedido(entregadoModal.id, {
+        estado: 'entregado',
+        fecha_entrega: formEntrega.fecha_entrega,
+        condicion_entrega: formEntrega.condicion_entrega,
+        responsable_entrega: formEntrega.responsable_entrega.trim(),
+        notas_entrega: formEntrega.notas_entrega.trim(),
+      });
+      setPedidos((prev) => prev.map((p) => p.id === entregadoModal.id ? normalizePedido(data) : p));
+      setEntregadoModal(null);
+      setFormEntrega({ fecha_entrega: '', condicion_entrega: 'completa', responsable_entrega: '', notas_entrega: '' });
+      toast.success('✅ Entrega registrada correctamente');
+    } catch (err) { toast.error(err.response?.data?.error || 'Error al registrar entrega'); }
+  };
+
   const handleExportar = () => {
     if (!canManage) { toast.info('Solo administración puede exportar.'); return; }
     exportToExcel(filteredPedidos.map((p) => ({ Codigo: p.codigo, Producto: p.producto, Cantidad: p.cantidad, Solicitante: p.solicitante, Estado: p.estado, Prioridad: p.prioridad, 'Fecha solicitud': p.fecha_solicitud })), `pedidos-sigirl-${new Date().toISOString().slice(0,10)}.xlsx`, 'Pedidos');
@@ -176,6 +202,12 @@ const Pedidos = () => {
             <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded text-xs font-mono font-bold bg-[#1FA971] text-white hover:bg-[#157A55] transition-colors shadow-sm">
               <Plus className="w-3.5 h-3.5" /> Nuevo pedido
             </button>
+            <button
+              onClick={() => navigate(dashboardPath)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Volver
+            </button>
           </div>
         </div>
 
@@ -185,10 +217,11 @@ const Pedidos = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
           <StatCard label="Total"      value={stats.total}      icon={<ShoppingCart className="w-4 h-4" />} color="blue" />
           <StatCard label="Pendientes" value={stats.pendientes} icon={<Clock className="w-4 h-4" />}        color="amber" />
           <StatCard label="Aprobados"  value={stats.aprobados}  icon={<CheckCircle2 className="w-4 h-4" />} color="emerald" />
+          <StatCard label="Entregados" value={stats.entregados} icon={<Truck className="w-4 h-4" />}        color="blue" />
           <StatCard label="Rechazados" value={stats.rechazados} icon={<AlertCircle className="w-4 h-4" />}  color="rose" />
         </div>
 
@@ -249,7 +282,7 @@ const Pedidos = () => {
                     <td className="py-3">
                       <div className="flex items-center justify-center gap-1">
                         <button
-                          onClick={() => toast.info(<div className="text-sm font-mono"><p className="font-bold mb-2 text-[#1FA971]">DETALLE PEDIDO</p><div className="space-y-1 text-stone-600"><p>Código: {p.codigo}</p><p>Producto: {p.producto}</p><p>Cantidad: {p.cantidad}</p><p>Solicitante: {p.solicitante}</p><p>Prioridad: {p.prioridad}</p><p>Estado: {p.estado}</p>{p.observaciones && <p>Obs: {p.observaciones}</p>}{p.motivo_rechazo && <p>Rechazo: {p.motivo_rechazo}</p>}</div></div>, { autoClose: 8000 })}
+                          onClick={() => setPedidoDetalle(p)}
                           className="p-1.5 text-blue-400 hover:bg-blue-500/10 rounded transition-colors" title="Ver"
                         ><Eye className="w-3.5 h-3.5" /></button>
                         {canManage && p.estado === 'pendiente' && (
@@ -257,6 +290,9 @@ const Pedidos = () => {
                             <button onClick={() => handleAprobarPedido(p.id)} className="p-1.5 text-[#1FA971] hover:bg-[#E8F5F0] rounded transition-colors" title="Aprobar"><CheckCircle2 className="w-3.5 h-3.5" /></button>
                             <button onClick={() => setPedidoToReject({ id: p.id, codigo: p.codigo, producto: p.producto, solicitante: p.solicitante, motivo: '' })} className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded transition-colors" title="Rechazar"><XCircle className="w-3.5 h-3.5" /></button>
                           </>
+                        )}
+                        {canManage && p.estado === 'aprobado' && (
+                          <button onClick={() => { setEntregadoModal(p); setFormEntrega({ fecha_entrega: new Date().toISOString().slice(0,10), condicion_entrega: 'completa', responsable_entrega: '', notas_entrega: '' }); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded transition-colors" title="Registrar entrega"><Truck className="w-3.5 h-3.5" /></button>
                         )}
                       </div>
                     </td>
@@ -317,6 +353,71 @@ const Pedidos = () => {
         </div>
       )}
 
+      {/* ── MODAL REGISTRAR ENTREGA ───────────────────────── */}
+      {entregadoModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white border border-[#E0E0E0] rounded-xl overflow-hidden shadow-2xl animate-[fadeInScale_0.18s_ease]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0] bg-blue-50">
+              <div>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <Truck className="w-4 h-4 text-blue-600" />
+                  <h2 className="text-sm font-mono font-bold text-blue-700 uppercase tracking-wider">REGISTRAR ENTREGA</h2>
+                </div>
+                <p className="text-[10px] font-mono text-blue-500 mt-0.5">{entregadoModal.codigo} · {entregadoModal.producto}</p>
+              </div>
+              <button onClick={() => setEntregadoModal(null)} className="p-1.5 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors"><XCircle className="w-4 h-4" /></button>
+            </div>
+
+            {/* Tarjeta resumen del pedido */}
+            <div className="mx-6 mt-5 bg-stone-50 border border-[#E0E0E0] rounded-lg p-4 grid grid-cols-3 gap-3">
+              {[
+                { label: 'Solicitante', value: entregadoModal.solicitante },
+                { label: 'Cantidad',    value: `${entregadoModal.cantidad} u.` },
+                { label: 'Prioridad',  value: entregadoModal.prioridad },
+              ].map(({ label, value }) => (
+                <div key={label}>
+                  <p className="text-[9px] font-mono font-bold text-stone-400 uppercase tracking-wider">{label}</p>
+                  <p className="text-xs font-mono text-stone-700 mt-0.5 capitalize">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Fecha de entrega <span className="text-rose-500">*</span></label>
+                  <input type="date" value={formEntrega.fecha_entrega} onChange={(e) => setFormEntrega({ ...formEntrega, fecha_entrega: e.target.value })} className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Condición de entrega</label>
+                  <select value={formEntrega.condicion_entrega} onChange={(e) => setFormEntrega({ ...formEntrega, condicion_entrega: e.target.value })} className={`${selectCls} pr-8`}>
+                    <option value="completa">Entrega completa — sin observaciones</option>
+                    <option value="parcial">Entrega parcial — cantidad reducida</option>
+                    <option value="observaciones">Con observaciones — requiere seguimiento</option>
+                    <option value="urgente">Urgente — verificación necesaria</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Responsable de entrega <span className="text-rose-500">*</span></label>
+                <input type="text" value={formEntrega.responsable_entrega} onChange={(e) => setFormEntrega({ ...formEntrega, responsable_entrega: e.target.value })} className={inputCls} placeholder="Nombre del responsable..." />
+              </div>
+              <div>
+                <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Notas adicionales</label>
+                <textarea rows={3} value={formEntrega.notas_entrega} onChange={(e) => setFormEntrega({ ...formEntrega, notas_entrega: e.target.value })} className={`${inputCls} resize-none`} placeholder="Estado del reactivo, temperatura, condiciones especiales..." />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+              <button onClick={() => setEntregadoModal(null)} className="px-4 py-2 rounded-lg text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:border-stone-400 hover:text-stone-700 transition-colors">Cancelar</button>
+              <button onClick={handleMarcarEntregado} className="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-1.5">
+                <Truck className="w-3.5 h-3.5" /> Confirmar entrega
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <RejectPedidoModal
         open={Boolean(pedidoToReject)}
         pedido={pedidoToReject}
@@ -325,6 +426,51 @@ const Pedidos = () => {
         onClose={() => setPedidoToReject(null)}
         onConfirm={() => pedidoToReject && handleRechazarPedido(pedidoToReject.id)}
       />
+
+      {/* ── MODAL DETALLE PEDIDO ─────────────────────────────── */}
+      {pedidoDetalle && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white border border-[#E0E0E0] rounded-lg overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0]">
+              <div>
+                <h2 className="text-sm font-mono font-bold text-[#1FA971] uppercase tracking-wider">DETALLE DEL PEDIDO</h2>
+                <p className="text-[10px] font-mono text-stone-500 mt-0.5">{pedidoDetalle.codigo}</p>
+              </div>
+              <button onClick={() => setPedidoDetalle(null)} className="p-1.5 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors">
+                <XCircle className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6">
+              <dl className="space-y-3">
+                {[
+                  { label: 'Código',          value: pedidoDetalle.codigo },
+                  { label: 'Solicitante',     value: pedidoDetalle.solicitante },
+                  { label: 'Producto',        value: pedidoDetalle.producto },
+                  { label: 'Cantidad',        value: pedidoDetalle.cantidad },
+                  { label: 'Departamento',    value: pedidoDetalle.departamento },
+                  { label: 'Prioridad',       value: pedidoDetalle.prioridad },
+                  { label: 'Estado',          value: pedidoDetalle.estado },
+                  { label: 'Fecha solicitud', value: pedidoDetalle.fecha_solicitud },
+                  pedidoDetalle.observaciones   && { label: 'Observaciones',       value: pedidoDetalle.observaciones },
+                  pedidoDetalle.motivo_rechazo  && { label: 'Motivo rechazo',        value: pedidoDetalle.motivo_rechazo },
+                  pedidoDetalle.fecha_entrega   && { label: 'Fecha entrega',         value: pedidoDetalle.fecha_entrega },
+                  pedidoDetalle.responsable_entrega && { label: 'Responsable entrega', value: pedidoDetalle.responsable_entrega },
+                  pedidoDetalle.condicion_entrega   && { label: 'Condición entrega',  value: pedidoDetalle.condicion_entrega?.replace(/_/g,' ') },
+                  pedidoDetalle.notas_entrega   && { label: 'Notas de entrega',      value: pedidoDetalle.notas_entrega },
+                ].filter(Boolean).map(({ label, value }) => (
+                  <div key={label} className="flex items-start gap-3 py-2 border-b border-[#E0E0E0] last:border-0">
+                    <dt className="w-32 flex-shrink-0 text-[9px] font-mono font-bold text-stone-400 uppercase tracking-wider pt-0.5">{label}</dt>
+                    <dd className="text-xs font-mono text-stone-700 capitalize">{value ?? '—'}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="flex justify-end px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+              <button onClick={() => setPedidoDetalle(null)} className="px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };

@@ -124,19 +124,39 @@ function Dashboard() {
     try {
       const [productosResponse, pedidosResponse] = await Promise.all([
         api.get('productos/').catch(() => ({ data: [] })),
-        (isAdmin || isJefe) ? api.get('pedidos/').catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        api.get('pedidos/').catch(() => ({ data: [] })),
       ]);
 
-      setProductos(productosResponse.data?.results ?? productosResponse.data ?? []);
+      const prods = productosResponse.data?.results ?? productosResponse.data ?? [];
+      setProductos(prods);
       setPedidos(pedidosResponse.data?.results ?? pedidosResponse.data ?? []);
 
       if (showToast) toast.success('🔬 Dashboard actualizado');
+
+      // Recordatorios de stock — leer preferencia del usuario
+      if (!showToast) {
+        try {
+          const username = localStorage.getItem('username') || '';
+          const prefs = JSON.parse(localStorage.getItem(`sigirl_profile_preferences:${username}`) || '{}');
+          const stockReminders = prefs.stockReminders !== false; // activo por defecto
+          if (stockReminders) {
+            const criticos = prods.filter((p) => Number(p.cantidad ?? 0) <= 0);
+            const bajos    = prods.filter((p) => Number(p.cantidad ?? 0) > 0 && Number(p.cantidad ?? 0) <= Number(p.minimo ?? p.umbral_minimo ?? 5));
+            if (criticos.length > 0) {
+              toast.error(`🔴 ${criticos.length} reactivo${criticos.length > 1 ? 's' : ''} agotado${criticos.length > 1 ? 's' : ''}: ${criticos.slice(0,2).map(p=>p.nombre).join(', ')}${criticos.length > 2 ? '...' : ''}`, { autoClose: 6000 });
+            }
+            if (bajos.length > 0) {
+              toast.warn(`🟠 ${bajos.length} reactivo${bajos.length > 1 ? 's' : ''} bajo mínimo: ${bajos.slice(0,2).map(p=>p.nombre).join(', ')}${bajos.length > 2 ? '...' : ''}`, { autoClose: 6000 });
+            }
+          }
+        } catch { /* preferencias no críticas */ }
+      }
     } catch {
       toast.error('❌ Error al cargar dashboard');
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, isJefe]);
+  }, []);
 
   useEffect(() => {
     cargarDatos();
@@ -331,7 +351,7 @@ function Dashboard() {
             <div className="flex items-center justify-center gap-4">
               <div className="relative w-48 h-48">
                 {chartsReady && donutData.length > 0 && (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width={192} height={192}>
                     <PieChart>
                       <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={3} stroke="none">
                         {donutData.map((entry, idx) => (

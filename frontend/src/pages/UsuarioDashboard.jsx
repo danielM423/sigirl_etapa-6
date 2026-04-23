@@ -1,9 +1,10 @@
 ﻿// Panel del usuario estándar - Estilo Laboratorio Oscuro
-import { useState, useEffect, useContext, useMemo } from 'react';
+import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   Plus, Eye, Clock, CheckCircle2, XCircle, Search, ChevronDown,
-  FileText, ShieldAlert, FlaskConical, X
+  FileText, ShieldAlert, FlaskConical, X, HelpCircle, Send, ArrowLeft
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { UserContext } from '../context/UserContext';
@@ -52,14 +53,46 @@ const StatCard = ({ label, value, icon, color='emerald' }) => {
 
 const UsuarioDashboard = () => {
   const { user } = useContext(UserContext);
+  const navigate = useNavigate();
   const [pedidos, setPedidos]                   = useState([]);
   const [productosDisponibles, setProductos]    = useState([]);
   const [showModal, setShowModal]               = useState(false);
+  const [showHelp, setShowHelp]                 = useState(false);
   const [searchTerm, setSearchTerm]             = useState('');
   const [filterStatus, setFilterStatus]         = useState('todos');
 
   const [formPedido, setFormPedido] = useState({ productoId:'', producto:'', cantidad:'', prioridad:'media', observaciones:'' });
   const [cuestionario, setCuestionario] = useState({ capacitacion:'', epp:'', protocolos:'', supervision:'si' });
+  const [formHelp, setFormHelp] = useState({ asunto: '', mensaje: '', urgencia: 'media' });
+  const [helpNotif, setHelpNotif] = useState(null); // { type: 'success'|'error', message: string }
+  const pedidosRef = useRef(null);
+
+  const showHelpNotif = (type, message) => {
+    setHelpNotif({ type, message });
+    setTimeout(() => setHelpNotif(null), 4000);
+  };
+
+  const handleEnviarAyuda = async () => {
+    if (!formHelp.asunto.trim() || !formHelp.mensaje.trim()) {
+      showHelpNotif('error', 'Completa el asunto y el mensaje antes de enviar.');
+      return;
+    }
+    try {
+      await createAlerta({
+        tipo: 'ayuda',
+        titulo: `[AYUDA] ${formHelp.asunto}`,
+        descripcion: `${formHelp.mensaje}\n\nSolicitado por: ${user?.username || 'Usuario'}`,
+        remitente: user?.username || 'Usuario',
+        prioridad: formHelp.urgencia,
+        estado: 'nueva',
+      });
+      setFormHelp({ asunto: '', mensaje: '', urgencia: 'media' });
+      showHelpNotif('success', '¡Solicitud enviada! El administrador y el jefe han sido notificados.');
+      setTimeout(() => setShowHelp(false), 2200);
+    } catch {
+      showHelpNotif('error', 'No se pudo enviar la solicitud. Intenta de nuevo.');
+    }
+  };
 
   useEffect(() => {
     const hydrate = async () => {
@@ -152,13 +185,37 @@ const UsuarioDashboard = () => {
 
         {/* Header */}
         <div className="bg-white border border-[#E0E0E0] rounded-lg p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <FlaskConical className="h-4 w-4 text-[#1FA971]" />
-            <span className="text-[10px] font-mono font-bold text-[#1FA971] uppercase tracking-wider">PANEL DE USUARIO</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#22c55e] animate-pulse" />
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <FlaskConical className="h-4 w-4 text-[#1FA971]" />
+                <span className="text-[10px] font-mono font-bold text-[#1FA971] uppercase tracking-wider">PANEL DE USUARIO</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#22c55e] animate-pulse" />
+              </div>
+              <h1 className="text-xl font-bold font-mono text-stone-700">Mis Solicitudes</h1>
+              <p className="text-[10px] font-mono text-stone-500 mt-1">Consulta tus pedidos y registra nuevas solicitudes de reactivos</p>
+            </div>
+            <button
+              onClick={() => navigate(-1)}
+              className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Volver
+            </button>
           </div>
-          <h1 className="text-xl font-bold font-mono text-stone-700">Mis Solicitudes</h1>
-          <p className="text-[10px] font-mono text-stone-500 mt-1">Consulta tus pedidos y registra nuevas solicitudes de reactivos</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => setShowHelp(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded text-xs font-mono font-bold bg-blue-500/10 text-blue-500 border border-blue-200 hover:bg-blue-500/20 transition-colors"
+            >
+              <HelpCircle className="w-3.5 h-3.5" /> Solicitar Ayuda al Administrador
+            </button>
+            <button
+              onClick={() => pedidosRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded text-xs font-mono font-bold bg-[#E8F5F0] text-[#1FA971] border border-[#1FA971]/25 hover:bg-[#1FA971]/20 transition-colors"
+            >
+              <FileText className="w-3.5 h-3.5" /> Ver Mis Solicitudes
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -208,7 +265,7 @@ const UsuarioDashboard = () => {
         </div>
 
         {/* Tabla de pedidos */}
-        <div className="bg-white border border-[#E0E0E0] rounded-lg overflow-hidden">
+        <div ref={pedidosRef} className="bg-white border border-[#E0E0E0] rounded-lg overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 border-b border-[#E0E0E0]">
             <span className="text-xs font-mono font-bold text-[#1FA971] uppercase tracking-wider">MIS PEDIDOS</span>
             <button
@@ -396,6 +453,75 @@ const UsuarioDashboard = () => {
               <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
                 <button onClick={()=>{ setShowModal(false); resetFormPedido(); }} className="px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors">Cancelar</button>
                 <button onClick={handleGuardarPedido} className="px-4 py-2 rounded text-xs font-mono font-bold bg-[#1FA971] text-white hover:bg-[#157A55] transition-colors shadow-sm">Crear Pedido</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── MODAL SOLICITAR AYUDA ─────────────────────────────── */}
+        {showHelp && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white border border-[#E0E0E0] rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E0E0] bg-blue-50">
+                <div>
+                  <h2 className="text-sm font-mono font-bold text-blue-700 uppercase tracking-wider">SOLICITAR AYUDA</h2>
+                  <p className="text-[10px] font-mono text-stone-500 mt-0.5">Tu mensaje llegará al administrador y al jefe del laboratorio</p>
+                </div>
+                <button onClick={() => setShowHelp(false)} className="p-1.5 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Asunto</label>
+                  <input
+                    type="text"
+                    value={formHelp.asunto}
+                    onChange={e => setFormHelp({ ...formHelp, asunto: e.target.value })}
+                    className={inputCls}
+                    placeholder="Describe brevemente tu problema"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Mensaje</label>
+                  <textarea
+                    rows={4}
+                    value={formHelp.mensaje}
+                    onChange={e => setFormHelp({ ...formHelp, mensaje: e.target.value })}
+                    className={`${inputCls} resize-none`}
+                    placeholder="Explica detalladamente tu situación o solicitud..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-mono font-bold text-stone-500 uppercase tracking-wider mb-1.5">Urgencia</label>
+                  <select
+                    value={formHelp.urgencia}
+                    onChange={e => setFormHelp({ ...formHelp, urgencia: e.target.value })}
+                    className={`${inputCls} appearance-none cursor-pointer`}
+                  >
+                    <option value="baja">Baja — Consulta general</option>
+                    <option value="media">Media — Necesito ayuda pronto</option>
+                    <option value="alta">Alta — Urgente</option>
+                  </select>
+                </div>
+              </div>
+              {helpNotif && (
+                <div className={`mx-6 mb-2 flex items-start gap-2.5 px-4 py-3 rounded-lg border text-xs font-mono font-bold transition-all ${
+                  helpNotif.type === 'success'
+                    ? 'bg-[#E8F5F0] border-[#1FA971]/30 text-[#157A55]'
+                    : 'bg-rose-50 border-rose-200 text-rose-600'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full mt-0.5 flex-shrink-0 ${
+                    helpNotif.type === 'success' ? 'bg-[#1FA971] animate-pulse' : 'bg-rose-400'
+                  }`} />
+                  {helpNotif.message}
+                </div>
+              )}
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#E0E0E0] bg-stone-50">
+                <button onClick={() => { setShowHelp(false); setHelpNotif(null); }} className="px-4 py-2 rounded text-xs font-mono font-bold border border-[#E0E0E0] text-stone-500 hover:text-stone-700 hover:border-slate-500 transition-colors">Cancelar</button>
+                <button onClick={handleEnviarAyuda} className="flex items-center gap-1.5 px-4 py-2 rounded text-xs font-mono font-bold bg-blue-500 text-white hover:bg-blue-600 transition-colors shadow-sm">
+                  <Send className="w-3 h-3" /> Enviar solicitud
+                </button>
               </div>
             </div>
           </div>
