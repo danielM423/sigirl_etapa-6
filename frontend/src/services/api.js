@@ -1,9 +1,10 @@
 import axios from "axios";
 
 // Cliente HTTP central del frontend.
-// Todas las solicitudes al backend pasan por esta instancia.
+// En desarrollo: VITE_API_URL=http://127.0.0.1:8000/api/
+// En producción (Railway): URL relativa /api/ — mismo dominio que Django
 const api = axios.create({
-  baseURL: "http://127.0.0.1:8000/api/",
+  baseURL: import.meta.env.VITE_API_URL || "/api/",
 });
 
 // Interceptor de salida:

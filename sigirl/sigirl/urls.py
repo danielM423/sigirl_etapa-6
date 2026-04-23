@@ -1,5 +1,6 @@
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
+from django.views.generic import TemplateView
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -15,7 +16,6 @@ def home(request):
 
 
 urlpatterns = [
-    path('', home),
     path('admin/', admin.site.urls),
 
     # JWT (Public)
@@ -29,4 +29,8 @@ urlpatterns = [
 
     # API
     path('api/', include('inventario.urls')),
+
+    # Catch-all: React Router maneja el resto
+    # Debe ir AL FINAL para no interceptar rutas de la API
+    re_path(r'^.*$', TemplateView.as_view(template_name='index.html'), name='react_app'),
 ]

@@ -59,6 +59,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # sirve archivos estáticos en producción
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -134,6 +135,14 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Compresión automática de estáticos con WhiteNoise
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# ── Frontend React (build de Vite) ───────────────────────────────
+# Django sirve el index.html del build para todas las rutas no-API
+FRONTEND_DIR = BASE_DIR.parent / 'frontend' / 'dist'
+TEMPLATES[0]['DIRS'] = [FRONTEND_DIR]
 
 # ── CORS ─────────────────────────────────────────────────────────
 # En desarrollo: True  |  En producción: False (usar CORS_ALLOWED_ORIGINS)
