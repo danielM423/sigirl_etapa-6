@@ -10,6 +10,7 @@ from inventario.models import Categoria, Producto
 
 
 SKIP_NAME_PATTERNS = ("documento", "inventario")
+SKIP_FILE_PATTERNS = ("errores", "listado_completo", "detalle", "log")
 INVALID_NAME_MARKERS = {
     "cantidad inicial",
     "cantidad inicial g",
@@ -101,11 +102,20 @@ def _should_skip_name(value):
 
 
 def _read_csv(file_path):
-    with file_path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        rows = list(reader)
-        headers = reader.fieldnames or []
-    return headers, rows
+    last_error = None
+    for encoding in ("utf-8-sig", "utf-16", "cp1252", "latin-1"):
+        try:
+            with file_path.open("r", encoding=encoding, newline="") as handle:
+                reader = csv.DictReader(handle)
+                rows = list(reader)
+                headers = reader.fieldnames or []
+            return headers, rows
+        except UnicodeError as exc:
+            last_error = exc
+
+    if last_error is not None:
+        raise last_error
+    return [], []
 
 
 def _read_xlsx(file_path):
@@ -212,6 +222,7 @@ class Command(BaseCommand):
                 for file_path in source_dir.iterdir()
                 if file_path.suffix.lower() in {".xlsx", ".xls", ".csv"}
                 and not any(pattern in file_path.name.lower() for pattern in SKIP_NAME_PATTERNS)
+                and not any(pattern in file_path.name.lower() for pattern in SKIP_FILE_PATTERNS)
             ]
         )
 
