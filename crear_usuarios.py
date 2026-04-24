@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 import os
+import sys
 import django
+
+# Force this script to use the deployable Django project inside sigirl/sigirl.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.join(BASE_DIR, 'sigirl')
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'sigirl.settings')
 django.setup()
