@@ -3,7 +3,7 @@ services:
     name: sigirl
     runtime: python
     buildCommand: pip install -r sigirl/sigirl/requirements.txt && cd sigirl && python manage.py collectstatic --noinput
-    startCommand: cd sigirl && python manage.py migrate --noinput && gunicorn sigirl.wsgi:application --bind 0.0.0.0:$PORT
+    startCommand: cd sigirl && python manage.py migrate --noinput && python manage.py reset_admin_password && gunicorn sigirl.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DEBUG
         value: "False"
@@ -14,4 +14,18 @@ services:
       - key: CORS_ALLOW_ALL_ORIGINS
         value: "False"
       - key: FRONTEND_APP_URL
+        value: "https://<tu-dominio>.onrender.com"
+      - key: EMAIL_BACKEND
+        value: "django.core.mail.backends.smtp.EmailBackend"
+      - key: EMAIL_HOST
+        value: "smtp.gmail.com"
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_USE_TLS
+        value: "True"
+      - key: EMAIL_HOST_USER
+        value: ""
+      - key: EMAIL_HOST_PASSWORD
+        value: ""
+      - key: DEFAULT_FROM_EMAIL
         value: ""
