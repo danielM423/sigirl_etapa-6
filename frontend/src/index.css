@@ -4,8 +4,8 @@
 
 /* Configuración del tema para Tailwind v4 */
 @theme {
-  --color-lab-bg: #f5f0e8;
-  --color-lab-surface: #ffffff;
+  --color-lab-bg: #edf6f1;
+  --color-lab-surface: #f9fdfb;
   --color-lab-border: #e2e8f0;
   --color-lab-accent: #22c55e;
   --color-lab-accent-glow: rgba(34, 197, 94, 0.1);
@@ -18,10 +18,10 @@
 
   /* Brand palette */
   --color-brand-primary: #1FA971;
-  --color-brand-dark:    #157A55;
-  --color-brand-light:   #E8F5F0;
-  --color-brand-bg:      #F5F7F6;
-  --color-brand-sidebar: #F0F4F2;
+  --color-brand-dark:    #0F7A53;
+  --color-brand-light:   #DDF3EA;
+  --color-brand-bg:      #EEF7F2;
+  --color-brand-sidebar: #E6F2EC;
 
   --font-mono: 'Roboto', 'Segoe UI', Arial, sans-serif;
   --font-serif: 'Roboto', 'Segoe UI', Arial, sans-serif;
@@ -59,7 +59,10 @@
 
   body {
     font-family: var(--font-mono);
-    background: var(--color-lab-bg);
+    background:
+      radial-gradient(circle at 15% 15%, rgba(31, 169, 113, 0.11) 0%, rgba(31, 169, 113, 0) 38%),
+      radial-gradient(circle at 85% 0%, rgba(15, 122, 83, 0.1) 0%, rgba(15, 122, 83, 0) 35%),
+      var(--color-lab-bg);
     color: var(--color-lab-text);
     min-height: 100vh;
   }

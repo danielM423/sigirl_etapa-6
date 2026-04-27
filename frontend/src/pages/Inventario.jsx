@@ -38,8 +38,8 @@ const StatCard = ({ label, value, icon, color = 'emerald' }) => {
 };
 
 const EstadoBadge = ({ estado }) => {
-  const styles = { ok: 'bg-emerald-100 text-emerald-700 border-emerald-200', bajo_stock: 'bg-amber-100 text-amber-700 border-amber-200', agotado: 'bg-rose-100 text-rose-700 border-rose-200' };
-  const dots = { ok: 'bg-emerald-500', bajo_stock: 'bg-amber-500', agotado: 'bg-rose-500' };
+  const styles = { ok: 'bg-emerald-100 text-emerald-700 border-emerald-200', bajo_stock: 'bg-rose-50 text-rose-500 border-rose-200', agotado: 'bg-rose-100 text-rose-700 border-rose-200' };
+  const dots = { ok: 'bg-emerald-500', bajo_stock: 'bg-rose-300', agotado: 'bg-rose-500' };
   const labels = { ok: 'OK', bajo_stock: 'Bajo stock', agotado: 'Agotado' };
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${styles[estado] || 'bg-stone-100 text-stone-600 border-stone-200'}`}>
@@ -283,7 +283,7 @@ const Inventario = () => {
                       {!compactView && <p className="text-[10px] font-mono text-stone-400 mt-0.5">#{String(p.id).padStart(4,'0')}</p>}
                     </td>
                     <td className={`${compactView ? 'py-1.5' : 'py-3'} pr-4`}><span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-100 text-indigo-700 border border-indigo-200">{p.categoria}</span></td>
-                    <td className={`${compactView ? 'py-1.5' : 'py-3'} pr-4`}><span className={`inline-flex items-center justify-center w-8 h-8 rounded font-bold text-sm font-mono ${p.cantidad <= p.umbral_minimo ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{p.cantidad}</span></td>
+                    <td className={`${compactView ? 'py-1.5' : 'py-3'} pr-4`}><span className="font-bold text-sm font-mono text-[#157A55]">{p.cantidad}</span></td>
                     <td className={`${compactView ? 'py-1.5' : 'py-3'} pr-4 text-sm font-mono text-stone-500`}>{p.umbral_minimo}</td>
                     <td className={`${compactView ? 'py-1.5' : 'py-3'} pr-4 text-sm font-mono text-stone-500`}>{p.ubicacion}</td>
                     <td className="py-3 pr-4"><EstadoBadge estado={p.estado} /></td>

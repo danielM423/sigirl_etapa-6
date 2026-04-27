@@ -270,7 +270,7 @@ function Dashboard() {
         </div>
 
         {/* Métricas - Grid FIJA 4 columnas */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <LabMetricCard 
             title="TOTAL PRODUCTOS" 
             value={stats.totalProductos} 
@@ -304,7 +304,7 @@ function Dashboard() {
           subtitle="Navegación operativa por módulo"
           icon={<ArrowUpRight className="h-4 w-4 text-emerald-600" />}
         >
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
             {quickActions.map((action) => (
               <button
                 key={action.path}
@@ -349,9 +349,9 @@ function Dashboard() {
             onActionClick={handleExportEstados}
           >
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <div className="relative w-48 h-48">
+              <div className="relative w-full max-w-[220px] h-[220px]">
                 {chartsReady && donutData.length > 0 && (
-                  <ResponsiveContainer width={192} height={192}>
+                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={3} stroke="none" label={false} labelLine={false}>
                         {donutData.map((entry, idx) => (

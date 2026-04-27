@@ -179,6 +179,9 @@ class UserProfile(models.Model):
     cargo = models.CharField(max_length=100, blank=True, default='')
     bio = models.TextField(blank=True, default='')
     avatar = models.TextField(blank=True, default='')
+    email_verified = models.BooleanField(default=False)
+    email_verified_at = models.DateTimeField(blank=True, null=True)
+    email_verification_sent_at = models.DateTimeField(blank=True, null=True)
 
     def __str__(self):
         return f"Perfil de {self.user.username}"

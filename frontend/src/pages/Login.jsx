@@ -1,230 +1,141 @@
-import { useState, useContext } from "react";
-import api from "../services/api";
-import { useNavigate } from "react-router-dom";
-import { UserContext } from "../context/UserContext";
-import { Eye, EyeOff, FlaskConical, Shield, Lock, Mail } from "lucide-react";
+import { useState, useContext } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import api, { resendVerificationEmail } from '../services/api';
+import { UserContext } from '../context/UserContext';
 
 function Login() {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resendStatus, setResendStatus] = useState('');
+
   const navigate = useNavigate();
   const { setUser, setRole } = useContext(UserContext);
 
-  const handleLogin = () => {
-    setError("");
+  const handleLogin = async () => {
+    setError('');
+    setResendStatus('');
+    setNeedsVerification(false);
+
+    if (!username.trim() || !password) {
+      setError('Ingresa usuario y contraseña.');
+      return;
+    }
+
     setLoading(true);
-    
-    api.post("token/", { username, password })
-      .then(res => {
-        console.log("✅ Login exitoso");
+    try {
+      const res = await api.post('token/', { username: username.trim(), password });
 
-        const savedRoles = JSON.parse(localStorage.getItem("userRoles") || "{}");
+      const savedRoles = JSON.parse(localStorage.getItem('userRoles') || '{}');
+      let userRole = res.data?.role || res.data?.user?.role || savedRoles[username] || 'usuario';
+      if (userRole === 'jefe_superior') userRole = 'jefe';
 
-        let userRole =
-          res.data?.role ||
-          res.data?.user?.role ||
-          savedRoles[username] ||
-          "usuario";
+      localStorage.setItem('token', res.data.access || res.data.token || 'authenticated');
+      localStorage.setItem('username', username.trim());
+      localStorage.setItem('role', userRole);
 
-        if (userRole === "jefe_superior") {
-          userRole = "jefe";
-        }
+      setUser({ username: username.trim(), role: userRole });
+      setRole(userRole);
 
-        localStorage.setItem("token", res.data.access || res.data.token || "authenticated");
-        localStorage.setItem("username", username);
-        localStorage.setItem("role", userRole);
-
-        setUser({ username, role: userRole });
-        setRole(userRole);
-        
-        setTimeout(() => {
-          if (userRole === 'admin') {
-            navigate('/admin');
-          } else if (userRole === 'jefe') {
-            navigate('/jefe');
-          } else {
-            navigate('/usuario');
-          }
-        }, 100);
-      })
-      .catch(err => {
-        console.error("❌ Error en login:", err);
-        setError("Credenciales incorrectas");
-        setLoading(false);
-      });
+      if (userRole === 'admin') navigate('/admin');
+      else if (userRole === 'jefe') navigate('/jefe');
+      else navigate('/usuario');
+    } catch (err) {
+      const data = err.response?.data || {};
+      if (data.email_not_verified) {
+        setNeedsVerification(true);
+        setError(data.error || 'Debes verificar tu correo antes de iniciar sesión.');
+      } else {
+        setError(data.error || 'Credenciales incorrectas.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleKeyPress = (e) => {
+  const handleResendVerification = async () => {
+    setResendStatus('');
+    try {
+      const res = await resendVerificationEmail({ username: username.trim() });
+      setResendStatus(res.data?.mensaje || 'Revisa tu bandeja de entrada para continuar.');
+    } catch (err) {
+      setResendStatus(err.response?.data?.error || 'No fue posible reenviar el correo de verificación.');
+    }
+  };
+
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter') handleLogin();
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-8" style={{ background: '#f5f0e8' }}>
-      {/* Grid de fondo sutil */}
-      <div className="fixed inset-0 pointer-events-none" style={{
-        backgroundImage: 'linear-gradient(rgba(34, 197, 94, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(34, 197, 94, 0.03) 1px, transparent 1px)',
-        backgroundSize: '30px 30px'
-      }}></div>
-      
-      {/* Círculos decorativos — ocultos en móvil para evitar overflow */}
-      <div className="hidden sm:block absolute top-20 left-10 w-72 h-72 bg-emerald-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
-      <div className="hidden sm:block absolute bottom-20 right-10 w-72 h-72 bg-teal-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse" style={{animationDelay: '2s'}}></div>
-
-      <div className="relative z-10 w-full max-w-[480px]">
-        {/* Logo y título */}
+    <div className="min-h-screen flex items-center justify-center px-4 py-8 bg-[radial-gradient(circle_at_top_left,_#d9f3e8_0%,_#f1f8f5_45%,_#e6f4ee_100%)]">
+      <div className="w-full max-w-md bg-white/90 border border-[#d2e8de] rounded-2xl shadow-[0_16px_40px_rgba(16,102,69,0.12)] p-8">
         <div className="text-center mb-8">
-          {/* Ícono del frasco */}
-          <div className="inline-flex p-3 rounded-2xl bg-gradient-to-br from-[#E8F5F0] to-emerald-100 border border-[#1FA971]/30 shadow-[0_4px_20px_rgba(31,169,113,0.18)] mb-5">
-            <FlaskConical className="w-12 h-12 text-[#1FA971]" />
-          </div>
-
-          {/* SIGIRL con gradiente y brillo */}
-          <h1 className="text-4xl font-extrabold font-mono tracking-[0.18em] bg-gradient-to-r from-[#157A55] via-[#1FA971] to-emerald-400 bg-clip-text text-transparent drop-shadow-sm leading-none mb-1">
-            SIGIRL
-          </h1>
-
-          {/* Tagline principal */}
-          <p className="text-[11px] font-mono font-semibold text-stone-600 tracking-wide mt-3 leading-relaxed px-2">
-            Gestionamos hoy los recursos que impulsan<br />el conocimiento del mañana.
-          </p>
-
-          {/* Subtexto */}
-          <p className="text-[9px] font-mono text-stone-400 mt-2 tracking-wider leading-relaxed px-4">
-            Control preciso de reactivos · Seguridad garantizada · Ciencia que transforma.
-          </p>
-
-          {/* Píldoras de beneficios */}
-          <div className="flex flex-wrap justify-center gap-1.5 mt-4 px-2">
-            {['Inventario inteligente', 'Trazabilidad segura', 'Datos en tiempo real', 'Ciencia en equipo'].map((b) => (
-              <span key={b} className="px-2.5 py-0.5 rounded-full text-[8px] font-mono font-bold bg-[#E8F5F0] text-[#157A55] border border-[#1FA971]/25 tracking-wide">
-                {b}
-              </span>
-            ))}
-          </div>
-
-          {/* Fórmula decorativa */}
-          <div className="inline-flex items-center gap-2 mt-4 px-5 py-2 rounded-lg bg-white border border-[#E0E0E0] shadow-sm">
-            <span className="text-[10px] font-mono font-bold text-stone-400 tracking-widest">SO₂OH</span>
-            <span className="text-[#1FA971] font-mono text-xs">·</span>
-            <span className="text-[10px] font-mono font-bold text-[#1FA971] tracking-widest">NaOH</span>
-            <span className="text-[#1FA971] font-mono text-xs">·</span>
-            <span className="text-[10px] font-mono font-bold text-stone-400 tracking-widest">HCl</span>
-            <span className="mx-2 w-px h-3 bg-stone-200" />
-            <span className="text-[9px] font-mono text-amber-500 font-bold tracking-wider">2H₂O → 2H₂ + O₂</span>
-          </div>
+          <h1 className="text-3xl font-extrabold tracking-wider text-[#0f7a53]">SIGIRL</h1>
+          <p className="text-sm text-stone-600 mt-2">Acceso al sistema de inventarios y reactivos</p>
         </div>
 
-        {/* Card de Login */}
-        <div className="bg-white border border-[#E0E0E0] rounded-xl relative overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.08)]">
-          <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#1FA971] via-[#4ade80] to-[#1FA971]"></div>
-          
-          <div className="absolute top-3 right-4 bg-stone-100 border border-stone-200 rounded-full px-2.5 py-0.5">
-            <span className="text-[9px] font-mono text-emerald-600 font-semibold tracking-wider">SECURE v2.4</span>
+        {error && (
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+            {error}
           </div>
-          
-          <div className="p-8">
-            <h2 className="text-xl font-bold text-[#157A55] font-mono mb-1">🔬 Acceso al sistema</h2>
-            <p className="text-stone-500 text-xs mb-6 font-mono">Ingrese sus credenciales de laboratorio</p>
+        )}
 
-            {error && (
-              <div className="bg-rose-50 border border-rose-200 rounded-md p-3 mb-5">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-rose-500 shadow shadow-rose-500"></span>
-                  <p className="text-rose-600 text-xs font-mono">{error}</p>
-                </div>
-              </div>
-            )}
-
-            <div className="bg-[#E8F5F0] border border-[#1FA971]/20 rounded-lg p-3 mb-6">
-              <p className="text-[#157A55] text-[9px] font-mono font-bold mb-1.5 tracking-wider">📋 CREDENCIALES DE DEMO:</p>
-              <div className="space-y-1 text-[10px] font-mono">
-                <p><span className="text-stone-500">admin</span> <span className="text-[#1FA971]">/ demo</span> → <span className="text-stone-500">Administrador</span></p>
-                <p><span className="text-stone-500">jefe</span> <span className="text-[#1FA971]">/ demo</span> → <span className="text-stone-500">Jefe de laboratorio</span></p>
-                <p><span className="text-stone-500">user</span> <span className="text-[#1FA971]">/ demo</span> → <span className="text-stone-500">Operador</span></p>
-              </div>
-            </div>
-
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-[10px] text-stone-500 font-mono mb-1.5 uppercase tracking-wider">
-                  <Mail className="inline w-3 h-3 mr-1" /> USUARIO
-                </label>
-                <input 
-                  placeholder="Ingrese su usuario" 
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:border-[#1FA971] focus:ring-1 focus:ring-[#1FA971]/30 text-sm font-mono text-stone-700 transition-all placeholder:text-stone-400"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-[10px] text-stone-500 font-mono mb-1.5 uppercase tracking-wider">
-                  <Lock className="inline w-3 h-3 mr-1" /> CONTRASEÑA
-                </label>
-                <div className="relative">
-                  <input 
-                    type={showPassword ? "text" : "password"} 
-                    placeholder="••••••••" 
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:border-[#1FA971] focus:ring-1 focus:ring-[#1FA971]/30 text-sm font-mono text-stone-700 transition-all pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-[#1FA971] transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <button 
-              onClick={handleLogin}
-              disabled={loading}
-              className="w-full py-2.5 bg-[#1FA971] hover:bg-[#157A55] text-white rounded-lg transition-all font-mono text-sm font-bold tracking-wider flex items-center justify-center gap-2 shadow-[0_2px_8px_rgba(31,169,113,0.35)] hover:shadow-[0_4px_14px_rgba(31,169,113,0.4)]"
+        {needsVerification && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs text-amber-700">Tu cuenta existe, pero aún no has verificado el correo.</p>
+            <button
+              type="button"
+              onClick={handleResendVerification}
+              className="mt-2 text-xs font-semibold text-[#0f7a53] hover:text-[#0b5f40]"
             >
-              {loading ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-300 shadow shadow-emerald-300 animate-pulse"></span>
-                  AUTENTICANDO...
-                </>
-              ) : (
-                <>
-                  <Shield className="w-4 h-4" />
-                  INGRESAR AL SISTEMA →
-                </>
-              )}
+              Reenviar correo de verificación
             </button>
+            {resendStatus && <p className="text-xs mt-2 text-stone-600">{resendStatus}</p>}
+          </div>
+        )}
 
-            <div className="mt-6 pt-4 border-t border-stone-100 text-center">
-              <p className="text-[10px] text-stone-500 font-mono">
-                ¿No tienes cuenta?{' '}
-                <a href="/register" className="text-[#1FA971] hover:text-[#157A55] hover:underline">
-                  Regístrate aquí
-                </a>
-              </p>
-            </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-stone-600 mb-1">Usuario</label>
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="w-full px-4 py-2.5 rounded-lg border border-stone-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#1fa971]/30 focus:border-[#1fa971]"
+              placeholder="Ingresa tu usuario"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-stone-600 mb-1">Contraseña</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="w-full px-4 py-2.5 rounded-lg border border-stone-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#1fa971]/30 focus:border-[#1fa971]"
+              placeholder="Ingresa tu contraseña"
+            />
           </div>
         </div>
 
-        <div className="text-center mt-6">
-          <div className="flex justify-center items-center gap-3 mb-2">
-            <span className="w-2 h-2 rounded-full bg-[#1FA971] shadow-[0_0_6px_#1FA971] animate-pulse"></span>
-            <span className="text-[8px] text-stone-400 font-mono tracking-wider">SYSTEM ONLINE</span>
-            <span className="w-px h-3 bg-stone-300"></span>
-            <span className="text-[8px] text-stone-400 font-mono tracking-wider">256-BIT ENCRYPTION</span>
-          </div>
-          <p className="text-[8px] text-stone-400 font-mono tracking-wider">
-            SIGIRL v2.4.0 // REAGENT TRACKING SYSTEM // © 2024
-          </p>
-        </div>
+        <button
+          onClick={handleLogin}
+          disabled={loading}
+          className="w-full mt-6 py-2.5 rounded-lg bg-[#1fa971] hover:bg-[#157a55] text-white font-semibold transition-colors disabled:opacity-60"
+        >
+          {loading ? 'Ingresando...' : 'Ingresar'}
+        </button>
+
+        <p className="text-center text-xs text-stone-500 mt-5">
+          ¿No tienes cuenta?{' '}
+          <Link to="/register" className="text-[#0f7a53] hover:underline font-semibold">
+            Regístrate aquí
+          </Link>
+        </p>
       </div>
     </div>
   );

@@ -1,1 +1,1 @@
-web: cd sigirl && python manage.py migrate --noinput && python ../crear_usuarios.py && python manage.py importar_reactivos_masivo --dir seed_data && python manage.py collectstatic --noinput && gunicorn sigirl.wsgi:application --bind 0.0.0.0:$PORT
+web: cd sigirl && python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn sigirl.wsgi:application --bind 0.0.0.0:$PORT

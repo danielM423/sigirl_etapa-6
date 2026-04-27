@@ -126,7 +126,7 @@ const Layout = ({ children }) => {
 
         {/* Sidebar */}
         <aside className={`
-          fixed lg:relative z-10
+          fixed z-10
           w-64 h-[calc(100vh-57px)] 
           bg-[#F0F4F2] border-r border-[#E0E0E0]
           transition-transform duration-300 ease-in-out
@@ -172,7 +172,7 @@ const Layout = ({ children }) => {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 min-w-0 p-3 sm:p-5 lg:p-6 overflow-auto">
+        <main className="flex-1 min-w-0 p-3 sm:p-5 lg:p-6 overflow-auto lg:ml-64">
           {children}
         </main>
       </div>

@@ -38,6 +38,7 @@ export default function Register() {
   const [error,   setError]   = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState('');
   const [showPassword, setShowPassword]           = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -54,7 +55,8 @@ export default function Register() {
     if (currentStep === 1) {
       if (!form.firstName.trim()) { setError('El nombre es requerido'); return false; }
       if (!form.lastName.trim())  { setError('El apellido es requerido'); return false; }
-      if (!form.email.includes('@')) { setError('Email inválido'); return false; }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(form.email.trim())) { setError('Ingresa un correo válido.'); return false; }
     }
     if (currentStep === 2) {
       if (!form.username.trim() || form.username.length < 3) { setError('Usuario: mínimo 3 caracteres'); return false; }
@@ -81,22 +83,12 @@ export default function Register() {
         institution: form.institution, department: form.department, role: form.role,
       });
 
-      const normalizedRole = form.role === 'jefe_superior' ? 'jefe' : form.role;
-      const savedRoles = JSON.parse(localStorage.getItem('userRoles') || '{}');
-      savedRoles[form.username] = normalizedRole;
-      localStorage.setItem('userRoles', JSON.stringify(savedRoles));
-      localStorage.setItem('username', form.username);
-      localStorage.setItem('role', normalizedRole);
-      localStorage.setItem('token', res.data?.access || res.data?.token || 'registered');
-
-      setUser({ username: form.username, role: normalizedRole });
-      setRole(normalizedRole);
+      // El registro no autentica hasta verificar correo.
+      localStorage.removeItem('token');
+      setUser(null);
+      setRole(null);
+      setVerificationEmail(res.data?.email || form.email);
       setSuccess(true);
-
-      setTimeout(() => {
-        const routes = { usuario:'/usuario', admin:'/admin', jefe:'/jefe' };
-        navigate(routes[normalizedRole] || '/usuario');
-      }, 1500);
     } catch (err) {
       setError(err.response?.data?.error || err.response?.data?.username?.[0] || err.response?.data?.email?.[0] || 'Error al registrar usuario');
       setLoading(false);
@@ -112,10 +104,15 @@ export default function Register() {
           <CheckCircle2 className="w-8 h-8 text-[#1FA971]" />
         </div>
         <h2 className="text-xl font-bold font-mono text-[#1FA971]">REGISTRO EXITOSO</h2>
-        <p className="text-stone-500 font-mono text-sm">Redirigiendo al panel...</p>
-        <div className="flex justify-center gap-1">
-          {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay:`${i*0.15}s` }} />)}
-        </div>
+        <p className="text-stone-600 font-mono text-sm">Revisa tu correo para verificar la cuenta.</p>
+        <p className="text-stone-500 font-mono text-xs">Se envió un enlace a: {verificationEmail}</p>
+        <button
+          type="button"
+          onClick={() => navigate('/login')}
+          className="mt-2 px-4 py-2 rounded bg-[#1FA971] hover:bg-[#157A55] text-white text-xs font-mono"
+        >
+          Ir al login
+        </button>
       </div>
     </div>
   );

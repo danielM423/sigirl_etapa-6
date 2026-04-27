@@ -12,7 +12,7 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   const requestUrl = config.url || "";
-  const isPublicRoute = ["token/", "register/"].some((route) => requestUrl.includes(route));
+  const isPublicRoute = ["token/", "register/", "verify-email/", "auth/resend-verification/"].some((route) => requestUrl.includes(route));
 
   if (token && !isPublicRoute) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -29,7 +29,7 @@ api.interceptors.response.use(
   response => response,
   error => {
     const requestUrl = error.config?.url || "";
-    const isPublicRoute = ["token/", "register/"].some((route) => requestUrl.includes(route));
+    const isPublicRoute = ["token/", "register/", "verify-email/", "auth/resend-verification/"].some((route) => requestUrl.includes(route));
 
     if (error.response?.status === 401 && !isPublicRoute) {
       console.error("❌ 401 - Token inválido o expirado");
@@ -75,6 +75,15 @@ export const deleteUsuario = (id)       => api.delete(`usuarios/${id}/`);
 // ── Movimientos ───────────────────────────────────────────
 export const getMovimientos    = ()         => api.get('movimientos/');
 export const createMovimiento  = (data)     => api.post('movimientos/', data);
+
+// ── Auth ──────────────────────────────────────────────────
+export const verifyEmailToken = (uid, token) => api.get(`verify-email/${uid}/${token}/`);
+export const resendVerificationEmail = (data) => api.post('auth/resend-verification/', data);
+
+// ── Reportes backend ──────────────────────────────────────
+export const getInventoryExcelReportUrl = () => `${api.defaults.baseURL}reportes/inventario-excel/`;
+export const getInventoryTemplateUrl = () => `${api.defaults.baseURL}reportes/plantilla-inventario/`;
+export const getInventoryPdfReportUrl = () => `${api.defaults.baseURL}reportes/inventario-pdf/`;
 
 // ── Auditoría ──────────────────────────────────────────────
 export const getAuditoria = (params = {}) => api.get('auditoria/', { params });

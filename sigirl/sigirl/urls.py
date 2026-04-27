@@ -4,7 +4,15 @@ from django.views.generic import TemplateView
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from inventario.views import register, get_current_user, manage_profile, PublicTokenObtainPairView, PublicTokenRefreshView
+from inventario.views import (
+    register,
+    get_current_user,
+    manage_profile,
+    verify_email,
+    resend_verification_email,
+    PublicTokenObtainPairView,
+    PublicTokenRefreshView,
+)
 
 
 @api_view(['GET'])
@@ -24,6 +32,8 @@ urlpatterns = [
 
     # Auth (Public)
     path('api/register/', register, name='register'),
+    path('api/verify-email/<str:uidb64>/<str:token>/', verify_email, name='verify_email'),
+    path('api/auth/resend-verification/', resend_verification_email, name='resend_verification_email'),
     path('api/auth/user/', get_current_user, name='get_current_user'),
     path('api/auth/profile/', manage_profile, name='manage_profile'),
 

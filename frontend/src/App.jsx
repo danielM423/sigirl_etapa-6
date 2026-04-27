@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 // Páginas de autenticación
 import Login from './pages/Login';
 import Register from './pages/Register';
+import VerifyEmail from './pages/VerifyEmail';
 
 // Dashboards por rol
 import UsuarioDashboard from './pages/UsuarioDashboard';
@@ -33,6 +34,7 @@ function App() {
           {/* Rutas públicas */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/verify-email/:uid/:token" element={<VerifyEmail />} />
 
           {/* Dashboards por rol */}
           <Route
