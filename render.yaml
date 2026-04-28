@@ -3,7 +3,7 @@ services:
     name: sigirl
     runtime: python
     buildCommand: pip install -r sigirl/sigirl/requirements.txt && cd sigirl && python manage.py collectstatic --noinput
-    startCommand: cd sigirl && python manage.py migrate --noinput && python ../crear_usuarios.py && python manage.py reset_admin_password && gunicorn sigirl.wsgi:application --bind 0.0.0.0:$PORT
+    startCommand: cd sigirl && python manage.py migrate --noinput && gunicorn sigirl.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DEBUG
         value: "False"
