@@ -1,6 +1,6 @@
 import { useState, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import api, { resendVerificationEmail } from '../services/api';
+import api, { resendVerificationEmail, verifyEmailCode } from '../services/api';
 import { UserContext } from '../context/UserContext';
 
 function Login() {
@@ -10,6 +10,10 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
   const [resendStatus, setResendStatus] = useState('');
+  const [verificationLink, setVerificationLink] = useState('');
+  const [serverVerificationCode, setServerVerificationCode] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verifyCodeStatus, setVerifyCodeStatus] = useState('');
 
   const navigate = useNavigate();
   const { setUser, setRole } = useContext(UserContext);
@@ -17,6 +21,9 @@ function Login() {
   const handleLogin = async () => {
     setError('');
     setResendStatus('');
+    setVerificationLink('');
+    setServerVerificationCode('');
+    setVerifyCodeStatus('');
     setNeedsVerification(false);
 
     if (!username.trim() || !password) {
@@ -44,9 +51,14 @@ function Login() {
       else navigate('/usuario');
     } catch (err) {
       const data = err.response?.data || {};
+      const statusCode = err.response?.status;
       if (data.email_not_verified) {
         setNeedsVerification(true);
         setError(data.error || 'Debes verificar tu correo antes de iniciar sesión.');
+      } else if (statusCode === 401) {
+        setError('Usuario o contraseña inválidos. Verifica las credenciales activas del despliegue.');
+      } else if (statusCode >= 500) {
+        setError('El servidor presentó un error temporal. Intenta de nuevo en unos segundos.');
       } else {
         setError(data.error || 'Credenciales incorrectas.');
       }
@@ -57,11 +69,39 @@ function Login() {
 
   const handleResendVerification = async () => {
     setResendStatus('');
+    setVerificationLink('');
+    setServerVerificationCode('');
     try {
-      const res = await resendVerificationEmail({ username: username.trim() });
+      const value = username.trim();
+      const payload = value.includes('@') ? { email: value } : { username: value };
+      const res = await resendVerificationEmail(payload);
       setResendStatus(res.data?.mensaje || 'Revisa tu bandeja de entrada para continuar.');
+      setVerificationLink(res.data?.verification_link || '');
+      setServerVerificationCode(res.data?.verification_code || '');
     } catch (err) {
       setResendStatus(err.response?.data?.error || 'No fue posible reenviar el correo de verificación.');
+    }
+  };
+
+  const handleVerifyWithCode = async () => {
+    setVerifyCodeStatus('');
+    const code = (verificationCode || '').replace(/\D/g, '');
+    if (code.length !== 6) {
+      setVerifyCodeStatus('Ingresa un código válido de 6 dígitos.');
+      return;
+    }
+
+    const value = username.trim();
+    const payload = value.includes('@') ? { email: value, code } : { username: value, code };
+
+    try {
+      const res = await verifyEmailCode(payload);
+      setVerifyCodeStatus(res.data?.mensaje || 'Cuenta verificada. Ahora inicia sesión.');
+      setNeedsVerification(false);
+      setError('');
+      setVerificationCode('');
+    } catch (err) {
+      setVerifyCodeStatus(err.response?.data?.error || 'No fue posible validar el código.');
     }
   };
 
@@ -75,6 +115,11 @@ function Login() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-extrabold tracking-wider text-[#0f7a53]">SIGIRL</h1>
           <p className="text-sm text-stone-600 mt-2">Acceso al sistema de inventarios y reactivos</p>
+        </div>
+
+        <div className="mb-4 rounded-lg border border-[#bfe9d7] bg-[#effaf5] p-3 text-xs text-[#116645]">
+          Las credenciales se sincronizan desde las variables del servicio en Render
+          (DJANGO_SUPERUSER_PASSWORD, DJANGO_JEFE_PASSWORD y DJANGO_USER_PASSWORD).
         </div>
 
         {error && (
@@ -93,7 +138,32 @@ function Login() {
             >
               Reenviar correo de verificación
             </button>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value)}
+                placeholder="Código de 6 dígitos"
+                className="flex-1 px-3 py-2 rounded border border-stone-300 text-xs"
+              />
+              <button
+                type="button"
+                onClick={handleVerifyWithCode}
+                className="px-3 py-2 rounded bg-[#1fa971] hover:bg-[#157a55] text-white text-xs"
+              >
+                Validar código
+              </button>
+            </div>
             {resendStatus && <p className="text-xs mt-2 text-stone-600">{resendStatus}</p>}
+            {verifyCodeStatus && <p className="text-xs mt-2 text-stone-600">{verifyCodeStatus}</p>}
+            {serverVerificationCode && <p className="text-xs mt-2 text-stone-600">Código temporal (local): {serverVerificationCode}</p>}
+            {verificationLink && (
+              <a
+                href={verificationLink}
+                className="inline-block mt-2 text-xs font-semibold text-[#0f7a53] hover:text-[#0b5f40]"
+              >
+                Abrir enlace de verificación ahora
+              </a>
+            )}
           </div>
         )}
 
