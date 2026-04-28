@@ -17,8 +17,12 @@
 | **Crear movimiento** | ✅ | ✅ | ❌ |
 | **Descargar Excel** | ✅ | ✅ | ✅ |
 | **Descargar PDF** | ✅ | ✅ | ✅ |
-| **Agregar usuario** | ✅ | ❌ | ❌ |
+| **Crear usuario** | Solo admin* | ✅ | ❌ |
+| **Editar rol usuario** | Solo admin* | ✅ | ❌ |
 | **Gestionar auditoria** | ✅ | ✅ | ❌ |
+
+*Admin puede crear/editar usuarios con rol "admin" o "usuario", pero NO "jefe".
+Jefe puede crear/editar usuarios con cualquier rol (admin, jefe, usuario).
 
 ---
 
@@ -106,18 +110,35 @@ permission_classes = [IsStaffOrSuperuser]
 7. Repite como jefe
 ```
 
-### Paso 5: CRUD de Usuarios (Solo Admin)
+### Paso 5: CRUD de Usuarios (Solo Admin y Jefe)
 ```
 1. Como admin: Ve a Admin → Usuarios
 2. Click en "+ Agregar Usuario"
-3. Llena formulario
-4. Guarda
-5. ✅ Debería crear sin error
-6. Como jefe: Intenta agregar usuario
-7. ✅ Debería retornar 403 Forbidden (esperado)
+3. Llena formulario e intenta:
+   - Crear con rol "usuario" → ✅ PERMITIDO
+   - Crear con rol "admin" → ✅ PERMITIDO
+   - Crear con rol "jefe" → ❌ PROHIBIDO (ver error 403)
+4. Como jefe: intenta las mismas pruebas
+   - Crear con rol "usuario" → ✅ PERMITIDO
+   - Crear con rol "admin" → ✅ PERMITIDO
+   - Crear con rol "jefe" → ✅ PERMITIDO (jefe sí puede)
+5. Como usuario normal: intenta crear usuario
+   - ❌ PROHIBIDO (ver error 403)
 ```
 
-### Paso 6: Descargas (Todos)
+### Paso 6: Editar Rol de Usuario (Escalada de permisos)
+```
+1. Como admin: Ve a Admin → Usuarios
+2. Elige un usuario existente y edita
+3. Intenta cambiar rol a "jefe" → ❌ PROHIBIDO (error 403)
+4. Intenta cambiar rol a "admin" → ✅ PERMITIDO
+5. Como jefe: edita el mismo usuario
+6. Intenta cambiar rol a "jefe" → ✅ PERMITIDO
+7. Como usuario normal: edita usuario
+   - ❌ PROHIBIDO (error 403)
+```
+
+### Paso 7: Descargas (Todos)
 ```
 1. Ve a Reportes
 2. Descarga Excel
@@ -126,7 +147,7 @@ permission_classes = [IsStaffOrSuperuser]
 5. ✅ Abre sin errores
 ```
 
-### Paso 7: Registro de Usuario (Cualquiera)
+### Paso 8: Registro de Usuario (Cualquiera)
 ```
 1. Ve a /register
 2. Llena formulario con correo real (@gmail, @hotmail, etc)
