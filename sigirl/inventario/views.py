@@ -810,10 +810,15 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsStaffOrSuperuser]
 
     def create(self, request, *args, **kwargs):
+        # Solo admin/jefe pueden crear usuarios
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response({'error': 'No tienes permiso para crear usuarios.'}, status=status.HTTP_403_FORBIDDEN)
+
         data = request.data
         username = str(data.get('username') or data.get('nombre_input') or '').strip()
         email = str(data.get('email') or '').strip()
         password = str(data.get('password') or '').strip()
+        rol = data.get('rol_input') or data.get('rol') or 'usuario'
 
         if not username:
             return Response({'username': ['El nombre de usuario es obligatorio.']}, status=status.HTTP_400_BAD_REQUEST)
@@ -824,13 +829,20 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         if email and User.objects.filter(email=email).exists():
             return Response({'email': ['Ya existe un usuario con ese correo.']}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Admin solo puede crear "admin" o "usuario", no "jefe"
+        if request.user.is_staff and not request.user.is_superuser:
+            if rol == 'jefe':
+                return Response({'rol': ['Solo jefe maestro puede crear otros jefes.']}, status=status.HTTP_403_FORBIDDEN)
+
+        # Jefe maestro puede crear cualquier rol
+        # (no hay restricción adicional)
+
         user = User(username=username, email=email)
         nombre = str(data.get('nombre_completo') or data.get('full_name') or username).strip()
         parts = nombre.split(' ', 1)
         user.first_name = parts[0]
         user.last_name = parts[1] if len(parts) > 1 else ''
 
-        rol = data.get('rol_input') or data.get('rol') or 'usuario'
         if rol == 'jefe':
             user.is_staff = True
             user.is_superuser = True
@@ -852,8 +864,21 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
+        # Solo admin/jefe pueden editar usuarios
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response({'error': 'No tienes permiso para editar usuarios.'}, status=status.HTTP_403_FORBIDDEN)
+
         user = self.get_object()
         data = request.data
+        rol = data.get('rol_input') or data.get('rol') or ''
+
+        # Admin solo puede cambiar rol a "admin" o "usuario", no a "jefe"
+        if rol and request.user.is_staff and not request.user.is_superuser:
+            if rol == 'jefe':
+                return Response({'rol': ['Solo jefe maestro puede asignar rol de jefe.']}, status=status.HTTP_403_FORBIDDEN)
+
+        # Jefe maestro puede cambiar a cualquier rol
+        # (no hay restricción adicional)
 
         username = str(data.get('username') or '').strip()
         if username and username != user.username:
@@ -873,7 +898,6 @@ class UserManagementViewSet(viewsets.ModelViewSet):
                 return Response({'email': ['Ya existe un usuario con ese correo.']}, status=status.HTTP_400_BAD_REQUEST)
             user.email = email
 
-        rol = data.get('rol_input') or data.get('rol') or ''
         if rol == 'jefe':
             user.is_staff = True
             user.is_superuser = True
