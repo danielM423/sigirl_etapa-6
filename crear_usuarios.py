@@ -46,20 +46,16 @@ for usuario in usuarios:
     db_user.set_password(usuario['password'])
     db_user.save()
 
-    profile, _ = UserProfile.objects.get_or_create(user=db_user)
-    profile.email_verified = True
-    profile.email_verified_at = timezone.now()
-    profile.email_verification_code_hash = ''
-    profile.email_verification_code_expires_at = None
-    profile.email_verification_attempts = 0
-    profile.save(
-        update_fields=[
-            'email_verified',
-            'email_verified_at',
-            'email_verification_code_hash',
-            'email_verification_code_expires_at',
-            'email_verification_attempts',
-        ]
+    # Use explicit defaults to avoid NULL inserts when the profile schema evolves.
+    UserProfile.objects.update_or_create(
+        user=db_user,
+        defaults={
+            'email_verified': True,
+            'email_verified_at': timezone.now(),
+            'email_verification_code_hash': '',
+            'email_verification_code_expires_at': None,
+            'email_verification_attempts': 0,
+        },
     )
 
     if created:
