@@ -455,7 +455,7 @@ const Pedidos = () => {
                   pedidoDetalle.motivo_rechazo  && { label: 'Motivo rechazo',        value: pedidoDetalle.motivo_rechazo },
                   pedidoDetalle.fecha_entrega   && { label: 'Fecha entrega',         value: pedidoDetalle.fecha_entrega },
                   pedidoDetalle.responsable_entrega && { label: 'Responsable entrega', value: pedidoDetalle.responsable_entrega },
-                  pedidoDetalle.condicion_entrega   && { label: 'Condición entrega',  value: pedidoDetalle.condicion_entrega?.replace(/_/g,' ') },
+                  pedidoDetalle.condicion_entrega   && { label: 'Condición entrega.',  value: pedidoDetalle.condicion_entrega?.replace(/_/g,' ') },
                   pedidoDetalle.notas_entrega   && { label: 'Notas de entrega',      value: pedidoDetalle.notas_entrega },
                 ].filter(Boolean).map(({ label, value }) => (
                   <div key={label} className="flex items-start gap-3 py-2 border-b border-[#E0E0E0] last:border-0">
