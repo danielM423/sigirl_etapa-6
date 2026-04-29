@@ -1,5 +1,6 @@
 ﻿// Registro de usuario - Estilo Laboratorio Oscuro
 import { useState, useContext } from 'react';
+import { toast } from 'react-toastify';
 import { useNavigate, Link } from 'react-router-dom';
 import { UserContext } from '../context/UserContext';
 import { Mail, Lock, User, Eye, EyeOff, CheckCircle2, AlertCircle, Building2, FlaskConical, ChevronRight, ChevronLeft } from 'lucide-react';
@@ -89,8 +90,11 @@ export default function Register() {
       setRole(null);
       setVerificationEmail(res.data?.email || form.email);
       setSuccess(true);
+      toast.success('¡Registro exitoso! Revisa tu correo para verificar la cuenta.');
     } catch (err) {
-      setError(err.response?.data?.error || err.response?.data?.username?.[0] || err.response?.data?.email?.[0] || 'Error al registrar usuario');
+      const msg = err.response?.data?.error || err.response?.data?.username?.[0] || err.response?.data?.email?.[0] || 'Error al registrar usuario';
+      setError(msg);
+      toast.error(msg);
       setLoading(false);
     }
   };

@@ -114,25 +114,33 @@ const Reportes = () => {
   }, [alertas, pedidos, productos, tab]);
 
   const handleExportExcel = () => {
-    if (tab === 'inventario') {
-      exportToExcel(productos.map((item) => ({ Producto: item.nombre, Categoria: item.categoria_nombre || item.categoria, Cantidad: item.cantidad, Estado: item.estado })), 'reporte-inventario.xlsx');
-    } else if (tab === 'pedidos') {
-      exportToExcel(pedidos.map((item) => ({ Codigo: item.codigo, Solicitante: item.solicitante || item.usuario_username, Producto: item.producto_nombre || item.producto, Prioridad: item.prioridad, Estado: item.estado })), 'reporte-pedidos.xlsx');
-    } else {
-      exportToExcel(alertas.map((item) => ({ Alerta: item.titulo, Prioridad: item.prioridad, Estado: item.estado, Remitente: item.remitente })), 'reporte-alertas.xlsx');
+    try {
+      if (tab === 'inventario') {
+        exportToExcel(productos.map((item) => ({ Producto: item.nombre, Categoria: item.categoria_nombre || item.categoria, Cantidad: item.cantidad, Estado: item.estado })), 'reporte-inventario.xlsx');
+      } else if (tab === 'pedidos') {
+        exportToExcel(pedidos.map((item) => ({ Codigo: item.codigo, Solicitante: item.solicitante || item.usuario_username, Producto: item.producto_nombre || item.producto, Prioridad: item.prioridad, Estado: item.estado })), 'reporte-pedidos.xlsx');
+      } else {
+        exportToExcel(alertas.map((item) => ({ Alerta: item.titulo, Prioridad: item.prioridad, Estado: item.estado, Remitente: item.remitente })), 'reporte-alertas.xlsx');
+      }
+      toast.success('Reporte exportado a Excel');
+    } catch (e) {
+      toast.error('Error al exportar a Excel: ' + (e.message || ''));
     }
-    toast.success('Reporte exportado a Excel');
   };
 
   const handleExportPdf = () => {
-    if (tab === 'inventario') {
-      exportToPdf({ title: 'Reporte de inventario SIGIRL', headers: ['Producto', 'Categoría', 'Cantidad', 'Estado'], rows: productos.map((item) => [item.nombre, item.categoria_nombre || item.categoria, item.cantidad, item.estado]), fileName: 'reporte-inventario.pdf' });
-    } else if (tab === 'pedidos') {
-      exportToPdf({ title: 'Reporte de pedidos SIGIRL', headers: ['Código', 'Solicitante', 'Producto', 'Prioridad', 'Estado'], rows: pedidos.map((item) => [item.codigo, item.solicitante || item.usuario_username, item.producto_nombre || item.producto, item.prioridad, item.estado]), fileName: 'reporte-pedidos.pdf' });
-    } else {
-      exportToPdf({ title: 'Reporte de alertas SIGIRL', headers: ['Alerta', 'Remitente', 'Prioridad', 'Estado'], rows: alertas.map((item) => [item.titulo, item.remitente, item.prioridad, item.estado]), fileName: 'reporte-alertas.pdf' });
+    try {
+      if (tab === 'inventario') {
+        exportToPdf({ title: 'Reporte de inventario SIGIRL', headers: ['Producto', 'Categoría', 'Cantidad', 'Estado'], rows: productos.map((item) => [item.nombre, item.categoria_nombre || item.categoria, item.cantidad, item.estado]), fileName: 'reporte-inventario.pdf' });
+      } else if (tab === 'pedidos') {
+        exportToPdf({ title: 'Reporte de pedidos SIGIRL', headers: ['Código', 'Solicitante', 'Producto', 'Prioridad', 'Estado'], rows: pedidos.map((item) => [item.codigo, item.solicitante || item.usuario_username, item.producto_nombre || item.producto, item.prioridad, item.estado]), fileName: 'reporte-pedidos.pdf' });
+      } else {
+        exportToPdf({ title: 'Reporte de alertas SIGIRL', headers: ['Alerta', 'Remitente', 'Prioridad', 'Estado'], rows: alertas.map((item) => [item.titulo, item.remitente, item.prioridad, item.estado]), fileName: 'reporte-alertas.pdf' });
+      }
+      toast.success('Reporte exportado a PDF');
+    } catch (e) {
+      toast.error('Error al exportar a PDF: ' + (e.message || ''));
     }
-    toast.success('Reporte exportado a PDF');
   };
 
   if (loading) {

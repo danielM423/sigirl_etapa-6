@@ -46,9 +46,13 @@ function Login() {
       setUser({ username: username.trim(), role: userRole });
       setRole(userRole);
 
-      if (userRole === 'admin') navigate('/admin');
-      else if (userRole === 'jefe') navigate('/jefe');
-      else navigate('/usuario');
+      // Si ya está en una ruta protegida, no redirigir a dashboard por recarga
+      const currentPath = window.location.pathname;
+      if (currentPath === '/login' || currentPath === '/' || currentPath === '/register') {
+        if (userRole === 'admin') navigate('/admin');
+        else if (userRole === 'jefe') navigate('/jefe');
+        else navigate('/usuario');
+      }
     } catch (err) {
       const data = err.response?.data || {};
       const statusCode = err.response?.status;

@@ -1,0 +1,35 @@
+nombre,tipo,categoria,cantidad,minimo,ubicacion,fecha_vencimiento
+Ácido Sulfúrico 98%,reactivo,Ácidos y Bases,5,2,Estante A1 - Refrigerador,2027-12-31
+Ácido Nítrico 65%,reactivo,Ácidos y Bases,3,1,Estante A2 - Campana,2027-06-30
+Hidróxido de Sodio,reactivo,Ácidos y Bases,10,3,Estante A3,2028-03-15
+Etanol 96%,solvente,Solventes Orgánicos,50,10,Armario B1,2026-08-15
+Acetona Grado Lab,solvente,Solventes Orgánicos,30,5,Armario B2,2027-01-10
+Cloroformo,solvente,Solventes Orgánicos,2,1,Armario B3 - Ventilación,2027-02-28
+Beaker 250ml,insumo,Vidrio Laboratorio,100,20,Armario C1,2029-01-01
+Beaker 500ml,insumo,Vidrio Laboratorio,50,10,Armario C1,2029-01-01
+Pipeta Graduada 10ml,insumo,Vidrio Laboratorio,25,5,Armario C2,2029-01-01
+Vaso de Precipitados 100ml,insumo,Vidrio Laboratorio,80,15,Armario C3,2029-01-01
+Matraz Aforado 100ml,insumo,Vidrio Laboratorio,20,5,Armario D1,2029-01-01
+Pipeta Pasteur,insumo,Vidrio Laboratorio,500,100,Caja D2,2029-01-01
+Termómetro de Mercurio,insumo,Vidrio Laboratorio,5,1,Armario D3,2028-12-31
+pH Metro Digital,equipo,Equipos Analíticos,1,1,Laboratorio 1 - Escritorio,2030-06-30
+Espectrofotómetro UV-Vis,equipo,Equipos Analíticos,1,1,Laboratorio 1 - Mesa Óptica,2031-12-31
+Balanza Analítica,equipo,Equipos Analíticos,1,1,Laboratorio 2 - Sala climatizada,2032-01-01
+Microscopio Óptico,equipo,Equipos Analíticos,2,1,Laboratorio 3 - Armario,2030-12-31
+Centrífuga,equipo,Equipos Especiales,1,1,Laboratorio 1 - Esquina,2031-05-15
+Guantes Nitrilo Talla L,insumo,Seguridad,500,100,Armario E1,2025-06-30
+Guantes Nitrilo Talla M,insumo,Seguridad,300,50,Armario E1,2025-06-30
+Mascarilla N95,insumo,Seguridad,200,40,Armario E2,2025-12-31
+Gafas de Seguridad,insumo,Seguridad,20,5,Armario E3,2029-01-01
+Bata de Laboratorio Blanca,insumo,Seguridad,15,3,Armario E4,2028-01-01
+Permanganato de Potasio,reactivo,Reactivos Especiales,2,1,Armario F1 - Luz Ámbar,2027-03-20
+Dicromato de Potasio,reactivo,Reactivos Especiales,1,0.5,Armario F2 - Luz Ámbar,2028-09-15
+Complejo Ferroso,reactivo,Reactivos Especiales,5,1,Armario F3,2027-11-30
+Carbón Activado,reactivo,Reactivos Especiales,10,2,Bolsa F4,2029-06-30
+Sílica Gel,reactivo,Reactivos Especiales,50,10,Bolsa G1,2029-12-31
+Alúmina Neutra,reactivo,Reactivos Especiales,20,3,Bolsa G2,2029-06-15
+Papel Indicador pH (1-14),insumo,Consumibles,10 rollos,2,Armario H1,2026-08-31
+Cinta Selladora Laboratorio,insumo,Consumibles,20,3,Gaveta H2,2027-12-31
+Solución Buffer pH 7,reactivo,Soluciones Estándar,5,1,Refrigerador 1,2026-02-28
+Solución Buffer pH 4,reactivo,Soluciones Estándar,5,1,Refrigerador 1,2026-02-28
+Agua Desionizada,reactivo,Soluciones Estándar,50,10,Garrafón Agua,2027-01-01
